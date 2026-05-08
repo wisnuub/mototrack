@@ -51,7 +51,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── YAMAHA ──────────────────────────────────────────────────────────────────
   {
     name: 'Yamaha',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/Yamaha_logo.svg/200px-Yamaha_logo.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Yamaha_logo.svg',
     logoFallback: 'YMH',
     country: 'Japan',
     color: '#003087',
@@ -85,7 +85,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── HONDA ───────────────────────────────────────────────────────────────────
   {
     name: 'Honda',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Honda_Logo.svg/200px-Honda_Logo.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/7b/Honda_Logo.svg',
     logoFallback: 'HND',
     country: 'Japan',
     color: '#CC0000',
@@ -119,7 +119,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── KAWASAKI ─────────────────────────────────────────────────────────────────
   {
     name: 'Kawasaki',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/Kawasaki_motorcycles_logo.svg/200px-Kawasaki_motorcycles_logo.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/2/24/Kawasaki_motorcycles_logo.svg',
     logoFallback: 'KWS',
     country: 'Japan',
     color: '#009900',
@@ -151,7 +151,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── SUZUKI ──────────────────────────────────────────────────────────────────
   {
     name: 'Suzuki',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Suzuki_logo_2.svg/200px-Suzuki_logo_2.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/1/12/Suzuki_logo_2.svg',
     logoFallback: 'SZK',
     country: 'Japan',
     color: '#004B98',
@@ -185,7 +185,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── ROYAL ENFIELD ────────────────────────────────────────────────────────────
   {
     name: 'Royal Enfield',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Royal_Enfield_logo.svg/200px-Royal_Enfield_logo.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/9/90/Royal_Enfield_logo.svg',
     logoFallback: 'RE',
     country: 'India',
     color: '#8B1A1A',
@@ -203,7 +203,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── KTM ─────────────────────────────────────────────────────────────────────
   {
     name: 'KTM',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/KTM_Sportmotorcycle_AG_%28Logo%29.svg/200px-KTM_Sportmotorcycle_AG_%28Logo%29.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/9/9c/KTM_Sportmotorcycle_AG_%28Logo%29.svg',
     logoFallback: 'KTM',
     country: 'Austria',
     color: '#FF6600',
@@ -221,7 +221,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── VESPA ───────────────────────────────────────────────────────────────────
   {
     name: 'Vespa',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Vespa_logo.svg/200px-Vespa_logo.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/6/6c/Vespa_logo.svg',
     logoFallback: 'VSP',
     country: 'Italy',
     color: '#5C2D91',
@@ -240,7 +240,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── HARLEY-DAVIDSON ──────────────────────────────────────────────────────────
   {
     name: 'Harley-Davidson',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/Harley-Davidson_logo.svg/200px-Harley-Davidson_logo.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/de/Harley-Davidson_logo.svg',
     logoFallback: 'H-D',
     country: 'USA',
     color: '#FF6600',
@@ -264,7 +264,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── BMW MOTORRAD ─────────────────────────────────────────────────────────────
   {
     name: 'BMW Motorrad',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/BMW.svg/200px-BMW.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/4/44/BMW.svg',
     logoFallback: 'BMW',
     country: 'Germany',
     color: '#1C69D4',
@@ -286,7 +286,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── DUCATI ───────────────────────────────────────────────────────────────────
   {
     name: 'Ducati',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/Ducati_Corse_logo.svg/200px-Ducati_Corse_logo.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/f/f4/Ducati_Corse_logo.svg',
     logoFallback: 'DCT',
     country: 'Italy',
     color: '#CC0000',
@@ -306,7 +306,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── TRIUMPH ──────────────────────────────────────────────────────────────────
   {
     name: 'Triumph',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Triumph_Motorcycles_logo.svg/200px-Triumph_Motorcycles_logo.svg.png',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/0/0d/Triumph_Motorcycles_logo.svg',
     logoFallback: 'TRP',
     country: 'UK',
     color: '#C41E3A',
