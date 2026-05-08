@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Rider, Group, Bike, MaintenanceRecord, WeatherData, TabId, TripTemplate, ChatMessage, Conversation, VoiceChannelParticipant, MusicTrack } from '../types'
+import type { Rider, Group, Bike, MaintenanceRecord, WeatherData, TabId, TripTemplate, ChatMessage, Conversation, VoiceChannelParticipant, MusicTrack, BikeModification, ModCategory } from '../types'
 import {
   MOCK_RIDERS, MOCK_GROUPS, MOCK_BIKES, MOCK_MAINTENANCE, MOCK_TRIP_TEMPLATES,
   MOCK_CONVERSATIONS, MOCK_MESSAGES,
@@ -9,6 +9,7 @@ import { isSupabaseReady } from '../lib/supabase'
 import {
   dbSignIn, dbSignUp, dbSignInWithGoogle, dbSignOut, dbGetProfile, dbUpdateProfile,
   dbGetBikes, dbInsertBike, dbGetMaintenance, dbInsertMaintenance, dbUpdateOdometer,
+  dbGetModifications, dbInsertModification, dbDeleteModification,
   dbGetConversations, dbGetMessages, dbSendMessage, dbMarkRead, dbToggleReaction,
   dbUpsertRider, dbUpdateLocation, dbSetRiderOffline,
 } from '../lib/db'
@@ -57,11 +58,14 @@ interface AppState {
   // Bikes & Maintenance
   bikes: Bike[]
   maintenance: MaintenanceRecord[]
+  mods: BikeModification[]
   activeBikeId: string | null
   addBike: (bike: Omit<Bike, 'id'>) => Promise<void>
   setActiveBike: (bikeId: string) => void
   addMaintenanceRecord: (record: Omit<MaintenanceRecord, 'id'>) => Promise<void>
   updateOdometer: (bikeId: string, km: number) => Promise<void>
+  addMod: (bikeId: string, mod: Omit<BikeModification, 'id' | 'bikeId' | 'createdAt'>) => Promise<void>
+  removeMod: (id: string) => Promise<void>
 
   // Explore
   tripTemplates: TripTemplate[]
@@ -220,6 +224,7 @@ export const useStore = create<AppState>()(
           user: null,
           bikes: isSupabaseReady ? [] : MOCK_BIKES,
           maintenance: isSupabaseReady ? [] : MOCK_MAINTENANCE,
+          mods: [],
           conversations: isSupabaseReady ? [] : MOCK_CONVERSATIONS,
           messages: isSupabaseReady ? [] : MOCK_MESSAGES,
           riders: isSupabaseReady ? [] : MOCK_RIDERS,
@@ -246,12 +251,11 @@ export const useStore = create<AppState>()(
             dbGetBikes(userId),
             dbGetConversations(userId),
           ])
-          const maintenance = bikes.length ? await dbGetMaintenance(bikes.map(b => b.id)) : []
-          set({
-            bikes,
-            maintenance,
-            conversations: convs,
-          })
+          const bikeIds = bikes.map(b => b.id)
+          const [maintenance, mods] = bikeIds.length
+            ? await Promise.all([dbGetMaintenance(bikeIds), dbGetModifications(bikeIds)])
+            : [[], []]
+          set({ bikes, maintenance, mods, conversations: convs })
 
           // Upsert this user's rider row
           const user = get().user
@@ -312,6 +316,7 @@ export const useStore = create<AppState>()(
       // Bikes
       bikes: isSupabaseReady ? [] : MOCK_BIKES,
       maintenance: isSupabaseReady ? [] : MOCK_MAINTENANCE,
+      mods: [],
       activeBikeId: 'bike-1',
 
       addMaintenanceRecord: async (record) => {
@@ -349,6 +354,24 @@ export const useStore = create<AppState>()(
       },
 
       setActiveBike: (bikeId) => set({ activeBikeId: bikeId }),
+
+      addMod: async (bikeId, mod) => {
+        const tempMod: BikeModification = {
+          ...mod, id: `mod-${nextId++}`, bikeId, createdAt: new Date(),
+        }
+        set(state => ({ mods: [...state.mods, tempMod] }))
+        if (isSupabaseReady) {
+          try {
+            const saved = await dbInsertModification(bikeId, mod)
+            set(state => ({ mods: state.mods.map(m => m.id === tempMod.id ? saved : m) }))
+          } catch (e) { console.warn('dbInsertModification failed', e) }
+        }
+      },
+
+      removeMod: async (id) => {
+        set(state => ({ mods: state.mods.filter(m => m.id !== id) }))
+        if (isSupabaseReady) dbDeleteModification(id).catch(() => {})
+      },
 
       updateOdometer: async (bikeId, km) => {
         if (isSupabaseReady) dbUpdateOdometer(bikeId, km).catch(() => {})

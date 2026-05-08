@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useStore } from '../../store/useStore'
-import { Plus, Wrench, Gauge, X, AlertTriangle, Star, ChevronRight } from 'lucide-react'
+import { Plus, Wrench, Gauge, X, AlertTriangle, Star, ChevronRight, Trash2, ExternalLink } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
-import type { MaintenanceType, MaintenanceRecord, Bike } from '../../types'
+import type { MaintenanceType, MaintenanceRecord, Bike, ModCategory, BikeModification } from '../../types'
 import AddBikeModal, { BikePlaceholder, BrandLogo } from './AddBikeModal'
 import { BIKE_BRANDS } from '../../data/bikeData'
 
@@ -193,6 +193,229 @@ function MaintenanceCard({ record, odometer }: { record: MaintenanceRecord; odom
   )
 }
 
+// ── Modifications ────────────────────────────────────────────────────────────
+
+const MOD_CATEGORIES: { value: ModCategory; label: string }[] = [
+  { value: 'rims',         label: 'Rims' },
+  { value: 'lamp',         label: 'Lamp' },
+  { value: 'exhaust',      label: 'Exhaust' },
+  { value: 'shockbreaker', label: 'Shockbreaker' },
+  { value: 'stabilizer',   label: 'Stabilizer' },
+  { value: 'handle_bar',   label: 'Handle Bar' },
+  { value: 'seat',         label: 'Seat' },
+  { value: 'ecu_cdi',      label: 'ECU / CDI' },
+  { value: 'spark_plug',   label: 'Spark Plug' },
+  { value: 'air_filter',   label: 'Air Filter' },
+  { value: 'brake',        label: 'Brake' },
+  { value: 'phone_holder', label: 'Phone Holder' },
+  { value: 'windshield',   label: 'Windshield' },
+  { value: 'body_kit',     label: 'Body Kit' },
+  { value: 'other',        label: 'Other' },
+]
+
+function shopPlatform(url: string): { label: string; color: string } {
+  if (url.includes('shopee'))    return { label: 'Shopee',   color: 'text-orange-400' }
+  if (url.includes('tokopedia')) return { label: 'Tokopedia',color: 'text-green-400' }
+  if (url.includes('tiktok'))    return { label: 'TikTok',   color: 'text-pink-400' }
+  return { label: 'Shop', color: 'text-gray-400' }
+}
+
+function AddModModal({ bikeId, onClose }: { bikeId: string; onClose: () => void }) {
+  const addMod = useStore(s => s.addMod)
+  const [category, setCategory] = useState<ModCategory>('exhaust')
+  const [name, setName] = useState('')
+  const [brand, setBrand] = useState('')
+  const [notes, setNotes] = useState('')
+  const [shopUrl, setShopUrl] = useState('')
+  const [price, setPrice] = useState('')
+
+  const handle = async () => {
+    if (!name.trim()) return
+    await addMod(bikeId, {
+      category,
+      name: name.trim(),
+      brand: brand.trim() || undefined,
+      notes: notes.trim() || undefined,
+      shopUrl: shopUrl.trim() || undefined,
+      price: price ? parseInt(price) : undefined,
+    })
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-bg-secondary rounded-t-3xl p-5 w-full max-w-lg animate-slide-up max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-bold text-lg">Add Modification</h3>
+          <button onClick={onClose} className="text-gray-400"><X size={20} /></button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs text-gray-400 mb-2 block">Category</label>
+            <div className="flex flex-wrap gap-2">
+              {MOD_CATEGORIES.map(c => (
+                <button
+                  key={c.value}
+                  onClick={() => setCategory(c.value)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    category === c.value
+                      ? 'bg-accent border-accent text-white'
+                      : 'border-white/15 text-gray-400 bg-bg-card hover:border-white/30'
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Name *</label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Yoshimura R-77"
+                className="w-full bg-bg-card border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-accent"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Brand</label>
+              <input
+                type="text"
+                value={brand}
+                onChange={e => setBrand(e.target.value)}
+                placeholder="e.g. Yoshimura"
+                className="w-full bg-bg-card border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Shop Link (Shopee / Tokopedia / TikTok)</label>
+            <input
+              type="url"
+              value={shopUrl}
+              onChange={e => setShopUrl(e.target.value)}
+              placeholder="Paste product URL"
+              className="w-full bg-bg-card border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-accent"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Price (Rp)</label>
+            <input
+              type="number"
+              value={price}
+              onChange={e => setPrice(e.target.value)}
+              placeholder="Optional"
+              className="w-full bg-bg-card border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-accent"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Notes</label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Install date, shop name, experience…"
+              rows={2}
+              className="w-full bg-bg-card border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-accent resize-none"
+            />
+          </div>
+
+          <button
+            onClick={handle}
+            disabled={!name.trim()}
+            className="w-full bg-accent text-white font-semibold py-3 rounded-xl disabled:opacity-50"
+          >
+            Save Modification
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ModificationsSection({ bike }: { bike: Bike }) {
+  const mods = useStore(s => s.mods.filter(m => m.bikeId === bike.id))
+  const removeMod = useStore(s => s.removeMod)
+  const [showAdd, setShowAdd] = useState(false)
+
+  const grouped = MOD_CATEGORIES
+    .map(c => ({ ...c, items: mods.filter(m => m.category === c.value) }))
+    .filter(g => g.items.length > 0)
+
+  return (
+    <div className="bg-bg-card rounded-2xl p-4 border border-white/5">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-gray-400 text-xs uppercase tracking-wider font-semibold">Modifications</p>
+        <button
+          onClick={() => setShowAdd(true)}
+          className="flex items-center gap-1 bg-accent text-white text-xs font-semibold px-3 py-1.5 rounded-full"
+        >
+          <Plus size={11} />Add
+        </button>
+      </div>
+
+      {grouped.length === 0 ? (
+        <p className="text-gray-500 text-sm text-center py-4">No modifications logged yet</p>
+      ) : (
+        <div className="space-y-4">
+          {grouped.map(group => (
+            <div key={group.value}>
+              <p className="text-gray-500 text-xs font-semibold mb-2">{group.label}</p>
+              <div className="space-y-2">
+                {group.items.map(mod => (
+                  <div key={mod.id} className="flex items-start gap-3 bg-bg-surface rounded-xl px-3 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{mod.name}</p>
+                      {mod.brand && <p className="text-gray-500 text-xs">{mod.brand}</p>}
+                      {mod.price && (
+                        <p className="text-gray-500 text-xs">Rp {mod.price.toLocaleString()}</p>
+                      )}
+                      {mod.notes && (
+                        <p className="text-gray-500 text-xs mt-0.5 italic">"{mod.notes}"</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {mod.shopUrl && (() => {
+                        const p = shopPlatform(mod.shopUrl)
+                        return (
+                          <a
+                            href={mod.shopUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`text-xs font-semibold flex items-center gap-1 ${p.color}`}
+                          >
+                            {p.label} <ExternalLink size={10} />
+                          </a>
+                        )
+                      })()}
+                      <button
+                        onClick={() => removeMod(mod.id)}
+                        className="text-gray-600 hover:text-moto-red transition-colors"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showAdd && <AddModModal bikeId={bike.id} onClose={() => setShowAdd(false)} />}
+    </div>
+  )
+}
+
 // ── Bike detail view ──────────────────────────────────────────────────────────
 
 function BikeDetail({ bike }: { bike: Bike }) {
@@ -294,6 +517,9 @@ function BikeDetail({ bike }: { bike: Bike }) {
           )}
         </div>
       )}
+
+      {/* Modifications */}
+      <ModificationsSection bike={bike} />
 
       {/* Maintenance overview – key items */}
       <div className="bg-bg-card rounded-2xl p-4 border border-white/5">

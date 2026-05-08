@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Bike, MaintenanceRecord, Conversation, ChatMessage, MusicTrack } from '../types'
+import type { Bike, MaintenanceRecord, Conversation, ChatMessage, MusicTrack, BikeModification, ModCategory } from '../types'
 
 // ─── Auth ─────────────────────────────────────────────────────
 
@@ -193,6 +193,66 @@ export async function dbGetMaintenance(bikeIds: string[]): Promise<MaintenanceRe
     nextServiceDate: row.next_service_date ? new Date(row.next_service_date) : undefined,
     cost: row.cost,
   }))
+}
+
+// ─── Bike Modifications ───────────────────────────────────────
+
+export async function dbGetModifications(bikeIds: string[]): Promise<BikeModification[]> {
+  if (!bikeIds.length) return []
+  const { data } = await supabase
+    .from('bike_modifications')
+    .select('*')
+    .in('bike_id', bikeIds)
+    .order('created_at', { ascending: false })
+  return (data ?? []).map((row: any): BikeModification => ({
+    id: row.id,
+    bikeId: row.bike_id,
+    category: row.category as ModCategory,
+    name: row.name,
+    brand: row.brand ?? undefined,
+    notes: row.notes ?? undefined,
+    shopUrl: row.shop_url ?? undefined,
+    price: row.price ?? undefined,
+    installedAt: row.installed_at ? new Date(row.installed_at) : undefined,
+    createdAt: new Date(row.created_at),
+  }))
+}
+
+export async function dbInsertModification(
+  bikeId: string,
+  mod: Omit<BikeModification, 'id' | 'bikeId' | 'createdAt'>
+): Promise<BikeModification> {
+  const { data, error } = await supabase
+    .from('bike_modifications')
+    .insert({
+      bike_id: bikeId,
+      category: mod.category,
+      name: mod.name,
+      brand: mod.brand ?? null,
+      notes: mod.notes ?? null,
+      shop_url: mod.shopUrl ?? null,
+      price: mod.price ?? null,
+      installed_at: mod.installedAt ?? null,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return {
+    id: data.id,
+    bikeId: data.bike_id,
+    category: data.category,
+    name: data.name,
+    brand: data.brand ?? undefined,
+    notes: data.notes ?? undefined,
+    shopUrl: data.shop_url ?? undefined,
+    price: data.price ?? undefined,
+    installedAt: data.installed_at ? new Date(data.installed_at) : undefined,
+    createdAt: new Date(data.created_at),
+  }
+}
+
+export async function dbDeleteModification(id: string) {
+  await supabase.from('bike_modifications').delete().eq('id', id)
 }
 
 export async function dbInsertMaintenance(record: Omit<MaintenanceRecord, 'id'>) {

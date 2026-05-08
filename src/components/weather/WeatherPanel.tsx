@@ -25,12 +25,14 @@ function rideability(code: number, wind: number) {
 }
 
 function HourlyBar({ hour, temp, precipProb, code }: { hour: number; temp: number; precipProb: number; code: number }) {
+  const now = new Date().getHours()
+  const isCurrent = hour === now || (hour <= now && hour + 1 > now)
   const label = hour === 0 ? '12am' : hour < 12 ? `${hour}am` : hour === 12 ? '12pm' : `${hour - 12}pm`
   return (
-    <div className="flex flex-col items-center gap-1 min-w-[52px]">
-      <span className="text-gray-500 text-xs">{label}</span>
+    <div className={`flex flex-col items-center gap-1 min-w-[52px] rounded-xl py-1 ${isCurrent ? 'bg-accent/10' : ''}`}>
+      <span className={`text-xs font-semibold ${isCurrent ? 'text-accent' : 'text-gray-500'}`}>{label}</span>
       {weatherIcon(code, 'text-xl')}
-      <span className="text-white text-sm font-bold">{temp}°</span>
+      <span className={`text-sm font-bold ${isCurrent ? 'text-accent' : 'text-white'}`}>{temp}°</span>
       {precipProb > 0 && (
         <span className="text-blue-400 text-[10px]">{precipProb}%</span>
       )}

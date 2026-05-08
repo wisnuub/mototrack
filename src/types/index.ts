@@ -6,6 +6,23 @@ export interface LatLng {
 export type RiderStatus = 'riding' | 'stopped' | 'offline'
 export type BikeType = 'sport' | 'naked' | 'matic' | 'cruiser' | 'adventure' | 'touring'
 export type MaintenanceType = 'oil_change' | 'vbelt' | 'tire_front' | 'tire_rear' | 'brake_front' | 'brake_rear' | 'chain' | 'full_service' | 'other'
+export type ModCategory =
+  | 'rims' | 'lamp' | 'phone_holder' | 'ecu_cdi' | 'spark_plug'
+  | 'shockbreaker' | 'stabilizer' | 'exhaust' | 'brake' | 'air_filter'
+  | 'handle_bar' | 'seat' | 'windshield' | 'body_kit' | 'other'
+
+export interface BikeModification {
+  id: string
+  bikeId: string
+  category: ModCategory
+  name: string
+  brand?: string
+  notes?: string
+  shopUrl?: string
+  price?: number
+  installedAt?: Date
+  createdAt: Date
+}
 export type TabId = 'map' | 'chat' | 'garage' | 'explore' | 'weather'
 
 export interface ChatMessage {
