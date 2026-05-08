@@ -25,6 +25,14 @@ export interface BikeModification {
 }
 export type TabId = 'map' | 'chat' | 'garage' | 'explore' | 'weather'
 
+export interface GarageShareData {
+  bikeId: string
+  bikeName: string
+  bikeImage?: string
+  brandColor?: string
+  mod?: { id: string; name: string; brand?: string; category: string }
+}
+
 export interface ChatMessage {
   id: string
   conversationId: string
@@ -32,12 +40,13 @@ export interface ChatMessage {
   senderName: string
   senderAvatar: string
   content: string
-  type: 'text' | 'location' | 'ride_invite' | 'system' | 'now_playing'
+  type: 'text' | 'location' | 'ride_invite' | 'system' | 'now_playing' | 'garage_share'
   timestamp: Date
   reactions: { emoji: string; userIds: string[] }[]
   rideData?: { groupName: string; destination: string; departureTime: string }
   locationData?: { lat: number; lng: number; name?: string }
   musicData?: MusicTrack
+  garageData?: GarageShareData
 }
 
 export interface Conversation {
@@ -194,4 +203,56 @@ export interface Attraction {
   description: string
   rating: number
   distanceKm?: number
+}
+
+// ─── Activity / Posts ──────────────────────────────────────────
+export type ActivityType = 'post' | 'service' | 'ride' | 'story'
+export type BadgeType = 'dev' | 'influencer' | 'founder' | 'verified'
+
+export interface ActivityPost {
+  id: string
+  userId: string
+  userName: string
+  userAvatar: string
+  badges?: BadgeType[]
+  bikeId?: string
+  bikeName?: string
+  activityType: ActivityType
+  title: string
+  description?: string
+  imageUrl?: string
+  displayTime: Date   // when the activity happened (user-set)
+  createdAt: Date     // when actually posted
+  isPublic: boolean
+  location?: string
+  likes: number
+  likedBy: string[]
+}
+
+// ─── Ride Sessions ─────────────────────────────────────────────
+export interface RideWaypoint {
+  lat: number
+  lng: number
+  timestamp: number
+  speed: number      // km/h
+  heading: number
+  altitude?: number
+}
+
+export interface RideSession {
+  id: string
+  userId: string
+  bikeId?: string
+  bikeName?: string
+  startTime: Date
+  endTime?: Date
+  durationMs?: number
+  distanceKm: number
+  maxSpeedKmh: number
+  avgSpeedKmh: number
+  maxLeanAngle?: number   // degrees, from device gyroscope
+  route: RideWaypoint[]
+  startLocation?: string
+  endLocation?: string
+  isActive: boolean
 }

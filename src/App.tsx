@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from './store/useStore'
 import { supabase, isSupabaseReady } from './lib/supabase'
-import { dbGetProfile } from './lib/db'
+import { dbGetProfile, dbGetAdminProfile } from './lib/db'
 import { useRealtimeRiders } from './hooks/useRealtimeRiders'
 import { useRealtimeMessages } from './hooks/useRealtimeMessages'
 import BottomNav from './components/layout/BottomNav'
@@ -13,7 +13,8 @@ import MusicPlayer from './components/chat/MusicPlayer'
 import ExplorePanel from './components/explore/ExplorePanel'
 import GaragePanel from './components/garage/GaragePanel'
 import WeatherPanel from './components/weather/WeatherPanel'
-import type { TabId } from './types'
+import ProfileSheet from './components/profile/ProfileSheet'
+import type { TabId, BadgeType } from './types'
 
 type RideMode = 'idle' | 'solo' | 'group'
 
@@ -87,6 +88,7 @@ export default function App() {
   const setupCompletedForUserId = useStore(s => s.setupCompletedForUserId)
   const [rideMode, setRideMode] = useState<RideMode>('idle')
   const [showLauncher, setShowLauncher] = useState(false)
+  const [showProfile, setShowProfile] = useState(false)
 
   // Handle Supabase OAuth redirect (Google sign-in)
   useEffect(() => {
@@ -94,7 +96,10 @@ export default function App() {
     supabase.auth.onAuthStateChange(async (event, session) => {
       if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
         const sbUser = session.user
-        const profile = await dbGetProfile(sbUser.id)
+        const [profile, adminProfile] = await Promise.all([
+          dbGetProfile(sbUser.id),
+          dbGetAdminProfile(sbUser.id).catch(() => ({ isAdmin: false, badges: [] })),
+        ])
         useStore.setState({
           user: {
             id: sbUser.id,
@@ -102,6 +107,8 @@ export default function App() {
             email: sbUser.email!,
             avatar: profile?.avatar ?? '🤙',
             provider: sbUser.app_metadata?.provider === 'google' ? 'google' : 'email',
+            badges: (profile?.badges ?? adminProfile.badges) as BadgeType[],
+            ...(adminProfile.isAdmin ? { isAdmin: true } : {}),
           },
         })
         await loadUserData(sbUser.id)
@@ -133,7 +140,7 @@ export default function App() {
       {/* Header */}
       <header className="flex-shrink-0 bg-bg-primary/95 backdrop-blur-sm border-b border-white/5 px-4 pt-safe flex items-center justify-between h-14">
         <div className="flex items-center gap-2">
-          <span className="text-xl">🏍️</span>
+          <img src="/logo.svg" className="w-7 h-7 rounded-lg" alt="MotoTrack" />
           <span className="text-white font-bold text-base tracking-tight">MotoTrack</span>
         </div>
 
@@ -149,11 +156,14 @@ export default function App() {
             </button>
           )}
 
-          <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-sm overflow-hidden">
-            {user.avatar?.startsWith('http')
+          <button
+            onClick={() => setShowProfile(true)}
+            className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-sm overflow-hidden border border-white/10 hover:border-accent/50 transition-colors"
+          >
+            {user.avatar?.startsWith('http') || user.avatar?.startsWith('data:')
               ? <img src={user.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               : user.avatar}
-          </div>
+          </button>
         </div>
       </header>
 
@@ -171,6 +181,9 @@ export default function App() {
 
       {/* Ride launcher overlay */}
       {showLauncher && <RideLauncher onStart={handleStartRide} />}
+
+      {/* Profile sheet */}
+      {showProfile && <ProfileSheet onClose={() => setShowProfile(false)} />}
 
       {/* Floating music player */}
       <MusicPlayer />

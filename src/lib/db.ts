@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Bike, MaintenanceRecord, Conversation, ChatMessage, MusicTrack, BikeModification, ModCategory } from '../types'
+import type { Bike, MaintenanceRecord, Conversation, ChatMessage, MusicTrack, BikeModification, ModCategory, GarageShareData, ActivityPost, ActivityType, RideSession, RideWaypoint } from '../types'
 
 // ─── Auth ─────────────────────────────────────────────────────
 
@@ -39,6 +39,12 @@ export async function dbGetSession() {
 export async function dbGetProfile(userId: string) {
   const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
   return data
+}
+
+export async function dbGetProfilesByIds(ids: string[]): Promise<{ id: string; name: string; avatar: string }[]> {
+  if (!ids.length) return []
+  const { data } = await supabase.from('profiles').select('id, name, avatar').in('id', ids)
+  return data ?? []
 }
 
 export async function dbUpdateProfile(userId: string, name: string, avatar: string, location?: string) {
@@ -342,6 +348,7 @@ export async function dbSendMessage(
       ride_data: extra.rideData ?? null,
       location_data: extra.locationData ?? null,
       music_data: extra.musicData ?? null,
+      garage_data: extra.garageData ?? null,
     })
     .select()
     .single()
@@ -374,6 +381,234 @@ export async function dbToggleReaction(messageId: string, userId: string, emoji:
   }
 }
 
+// ─── Activity Posts ───────────────────────────────────────────
+
+export async function dbGetActivityPosts(userId: string): Promise<ActivityPost[]> {
+  const { data } = await supabase
+    .from('activity_posts')
+    .select('*')
+    .eq('user_id', userId)
+    .order('display_time', { ascending: false })
+    .limit(50)
+  return (data ?? []).map(rowToActivityPost)
+}
+
+export async function dbGetPublicFeed(limit = 30): Promise<ActivityPost[]> {
+  const { data } = await supabase
+    .from('activity_posts')
+    .select('*')
+    .eq('is_public', true)
+    .order('display_time', { ascending: false })
+    .limit(limit)
+  return (data ?? []).map(rowToActivityPost)
+}
+
+export async function dbInsertActivityPost(
+  userId: string,
+  userName: string,
+  userAvatar: string,
+  badges: string[],
+  post: Omit<ActivityPost, 'id' | 'userId' | 'userName' | 'userAvatar' | 'badges' | 'createdAt' | 'likes' | 'likedBy'>
+): Promise<ActivityPost> {
+  const { data, error } = await supabase
+    .from('activity_posts')
+    .insert({
+      user_id: userId,
+      user_name: userName,
+      user_avatar: userAvatar,
+      badges,
+      bike_id: post.bikeId ?? null,
+      bike_name: post.bikeName ?? null,
+      activity_type: post.activityType,
+      title: post.title,
+      description: post.description ?? null,
+      image_url: post.imageUrl ?? null,
+      display_time: post.displayTime.toISOString(),
+      is_public: post.isPublic,
+      location: post.location ?? null,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return rowToActivityPost(data)
+}
+
+export async function dbDeleteActivityPost(id: string) {
+  await supabase.from('activity_posts').delete().eq('id', id)
+}
+
+export async function dbTogglePostLike(postId: string, userId: string): Promise<void> {
+  const { data } = await supabase
+    .from('activity_posts')
+    .select('liked_by, likes')
+    .eq('id', postId)
+    .single()
+  if (!data) return
+  const likedBy: string[] = data.liked_by ?? []
+  const already = likedBy.includes(userId)
+  await supabase.from('activity_posts').update({
+    liked_by: already ? likedBy.filter(id => id !== userId) : [...likedBy, userId],
+    likes: already ? Math.max(0, data.likes - 1) : data.likes + 1,
+  }).eq('id', postId)
+}
+
+function rowToActivityPost(row: any): ActivityPost {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name ?? '',
+    userAvatar: row.user_avatar ?? '🤙',
+    badges: row.badges ?? [],
+    bikeId: row.bike_id ?? undefined,
+    bikeName: row.bike_name ?? undefined,
+    activityType: row.activity_type as ActivityType,
+    title: row.title,
+    description: row.description ?? undefined,
+    imageUrl: row.image_url ?? undefined,
+    displayTime: new Date(row.display_time),
+    createdAt: new Date(row.created_at),
+    isPublic: row.is_public ?? true,
+    location: row.location ?? undefined,
+    likes: row.likes ?? 0,
+    likedBy: row.liked_by ?? [],
+  }
+}
+
+// ─── Ride Sessions ────────────────────────────────────────────
+
+export async function dbInsertRideSession(userId: string, session: Omit<RideSession, 'id'>): Promise<string> {
+  const { data, error } = await supabase
+    .from('ride_sessions')
+    .insert({
+      user_id: userId,
+      bike_id: session.bikeId ?? null,
+      bike_name: session.bikeName ?? null,
+      start_time: session.startTime.toISOString(),
+      end_time: session.endTime?.toISOString() ?? null,
+      duration_ms: session.durationMs ?? null,
+      distance_km: session.distanceKm,
+      max_speed_kmh: session.maxSpeedKmh,
+      avg_speed_kmh: session.avgSpeedKmh,
+      max_lean_angle: session.maxLeanAngle ?? null,
+      route: session.route,
+      start_location: session.startLocation ?? null,
+      end_location: session.endLocation ?? null,
+      is_active: session.isActive,
+    })
+    .select('id')
+    .single()
+  if (error) throw error
+  return data.id
+}
+
+export async function dbGetRideSessions(userId: string): Promise<RideSession[]> {
+  const { data } = await supabase
+    .from('ride_sessions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('start_time', { ascending: false })
+    .limit(20)
+  return (data ?? []).map((row: any): RideSession => ({
+    id: row.id,
+    userId: row.user_id,
+    bikeId: row.bike_id ?? undefined,
+    bikeName: row.bike_name ?? undefined,
+    startTime: new Date(row.start_time),
+    endTime: row.end_time ? new Date(row.end_time) : undefined,
+    durationMs: row.duration_ms ?? undefined,
+    distanceKm: row.distance_km ?? 0,
+    maxSpeedKmh: row.max_speed_kmh ?? 0,
+    avgSpeedKmh: row.avg_speed_kmh ?? 0,
+    maxLeanAngle: row.max_lean_angle ?? undefined,
+    route: row.route ?? [],
+    startLocation: row.start_location ?? undefined,
+    endLocation: row.end_location ?? undefined,
+    isActive: row.is_active ?? false,
+  }))
+}
+
+// ─── Badge Applications ───────────────────────────────────────
+
+export interface BadgeApplication {
+  id: string
+  userId: string
+  userName: string
+  userAvatar: string
+  badgeType: 'influencer'
+  instagramUrl: string
+  youtubeUrl?: string
+  status: 'pending' | 'approved' | 'rejected'
+  createdAt: Date
+  reviewedAt?: Date
+}
+
+export async function dbApplyForBadge(
+  userId: string,
+  userName: string,
+  userAvatar: string,
+  instagramUrl: string,
+  youtubeUrl: string
+): Promise<void> {
+  const { error } = await supabase.from('badge_applications').upsert({
+    user_id: userId,
+    user_name: userName,
+    user_avatar: userAvatar,
+    badge_type: 'influencer',
+    instagram_url: instagramUrl,
+    youtube_url: youtubeUrl || null,
+    status: 'pending',
+  }, { onConflict: 'user_id,badge_type' })
+  if (error) throw error
+}
+
+export async function dbGetBadgeApplications(): Promise<BadgeApplication[]> {
+  const { data } = await supabase
+    .from('badge_applications')
+    .select('*')
+    .order('created_at', { ascending: false })
+  return (data ?? []).map((row: any): BadgeApplication => ({
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name,
+    userAvatar: row.user_avatar,
+    badgeType: row.badge_type,
+    instagramUrl: row.instagram_url,
+    youtubeUrl: row.youtube_url ?? undefined,
+    status: row.status,
+    createdAt: new Date(row.created_at),
+    reviewedAt: row.reviewed_at ? new Date(row.reviewed_at) : undefined,
+  }))
+}
+
+export async function dbReviewBadgeApplication(
+  applicationId: string,
+  userId: string,
+  status: 'approved' | 'rejected'
+): Promise<void> {
+  await supabase.from('badge_applications').update({
+    status,
+    reviewed_at: new Date().toISOString(),
+  }).eq('id', applicationId)
+
+  if (status === 'approved') {
+    // Add badge to user profile
+    const { data: profile } = await supabase.from('profiles').select('badges').eq('id', userId).single()
+    const existing: string[] = profile?.badges ?? []
+    if (!existing.includes('influencer')) {
+      await supabase.from('profiles').update({ badges: [...existing, 'influencer'] }).eq('id', userId)
+    }
+  }
+}
+
+export async function dbBanUser(userId: string): Promise<void> {
+  await supabase.from('profiles').update({ is_banned: true }).eq('id', userId)
+}
+
+export async function dbGetAdminProfile(userId: string): Promise<{ isAdmin: boolean; badges: string[] }> {
+  const { data } = await supabase.from('profiles').select('is_admin, badges').eq('id', userId).single()
+  return { isAdmin: data?.is_admin ?? false, badges: data?.badges ?? [] }
+}
+
 function rowToMessage(row: any): ChatMessage {
   const reactions: ChatMessage['reactions'] = []
   for (const r of row.message_reactions ?? []) {
@@ -394,5 +629,6 @@ function rowToMessage(row: any): ChatMessage {
     rideData: row.ride_data ?? undefined,
     locationData: row.location_data ?? undefined,
     musicData: row.music_data as MusicTrack | undefined,
+    garageData: row.garage_data as GarageShareData | undefined,
   }
 }

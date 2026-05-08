@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useStore } from '../../store/useStore'
-import { Plus, Wrench, Gauge, X, AlertTriangle, Star, ChevronRight, Trash2, ExternalLink } from 'lucide-react'
+import { Plus, Wrench, Gauge, X, AlertTriangle, Star, ChevronRight, Trash2, ExternalLink, Share2 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
-import type { MaintenanceType, MaintenanceRecord, Bike, ModCategory, BikeModification } from '../../types'
+import type { MaintenanceType, MaintenanceRecord, Bike, ModCategory, BikeModification, GarageShareData } from '../../types'
 import AddBikeModal, { BikePlaceholder, BrandLogo } from './AddBikeModal'
 import { BIKE_BRANDS } from '../../data/bikeData'
+import { ActivityPostCard } from '../profile/ProfileSheet'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -341,7 +342,7 @@ function AddModModal({ bikeId, onClose }: { bikeId: string; onClose: () => void 
   )
 }
 
-function ModificationsSection({ bike }: { bike: Bike }) {
+function ModificationsSection({ bike, onShareMod }: { bike: Bike; onShareMod: (mod: BikeModification) => void }) {
   const mods = useStore(s => s.mods.filter(m => m.bikeId === bike.id))
   const removeMod = useStore(s => s.removeMod)
   const [showAdd, setShowAdd] = useState(false)
@@ -397,6 +398,12 @@ function ModificationsSection({ bike }: { bike: Bike }) {
                         )
                       })()}
                       <button
+                        onClick={() => onShareMod(mod)}
+                        className="text-gray-600 hover:text-accent transition-colors"
+                      >
+                        <Share2 size={14} />
+                      </button>
+                      <button
                         onClick={() => removeMod(mod.id)}
                         className="text-gray-600 hover:text-moto-red transition-colors"
                       >
@@ -416,12 +423,87 @@ function ModificationsSection({ bike }: { bike: Bike }) {
   )
 }
 
+// ── Conversation Picker ───────────────────────────────────────────
+
+function ConversationPicker({ onSelect, onClose }: {
+  onSelect: (convId: string) => void
+  onClose: () => void
+}) {
+  const conversations = useStore(s => s.conversations)
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-bg-secondary rounded-t-3xl p-5 w-full max-w-lg animate-slide-up max-h-[60vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-bold text-lg">Share to Chat</h3>
+          <button onClick={onClose} className="text-gray-400"><X size={20} /></button>
+        </div>
+        <div className="space-y-2">
+          {conversations.map(conv => (
+            <button
+              key={conv.id}
+              onClick={() => { onSelect(conv.id); onClose() }}
+              className="w-full flex items-center gap-3 bg-bg-card rounded-xl px-3 py-3 hover:bg-bg-surface transition-all text-left"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-accent/20 flex items-center justify-center text-xl flex-shrink-0">
+                {conv.emoji ?? (conv.type === 'group' ? '👥' : '💬')}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold text-sm truncate">{conv.name}</p>
+                <p className="text-gray-500 text-xs capitalize">{conv.type}</p>
+              </div>
+              <ChevronRight size={16} className="text-gray-600 flex-shrink-0" />
+            </button>
+          ))}
+          {conversations.length === 0 && (
+            <p className="text-gray-500 text-sm text-center py-6">No conversations yet</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Activity section ──────────────────────────────────────────────
+
+function GarageActivitySection() {
+  const user = useStore(s => s.user)
+  const activityPosts = useStore(s => s.activityPosts.filter(p => p.userId === (user?.id ?? 'local')))
+  const filtered = activityPosts.filter(p => p.activityType === 'service')
+  if (filtered.length === 0) return null
+  return (
+    <div>
+      <p className="text-gray-400 text-xs uppercase tracking-wider font-semibold mb-2">Service History</p>
+      <div className="space-y-3">
+        {filtered.slice(0, 3).map(p => <ActivityPostCard key={p.id} post={p} />)}
+      </div>
+    </div>
+  )
+}
+
 // ── Bike detail view ──────────────────────────────────────────────────────────
 
 function BikeDetail({ bike }: { bike: Bike }) {
   const maintenance = useStore(s => s.maintenance.filter(m => m.bikeId === bike.id)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()))
+  const sendMessage = useStore(s => s.sendMessage)
   const [showAddMaint, setShowAddMaint] = useState(false)
+  const [showSharePicker, setShowSharePicker] = useState(false)
+  const [shareMod, setShareMod] = useState<BikeModification | null>(null)
+
+  const shareGarage = (convId: string, mod?: BikeModification) => {
+    const garageData: GarageShareData = {
+      bikeId: bike.id,
+      bikeName: `${bike.year} ${bike.brand} ${bike.model}`,
+      bikeImage: bike.photo ?? bike.imageUrl,
+      brandColor: bike.color,
+      mod: mod ? { id: mod.id, name: mod.name, brand: mod.brand, category: mod.category } : undefined,
+    }
+    const content = mod
+      ? `Check out my ${mod.name} on my ${bike.brand} ${bike.model}!`
+      : `Check out my ${bike.brand} ${bike.model}!`
+    sendMessage(convId, content, 'garage_share', { garageData })
+  }
 
   const lastOil  = maintenance.find(m => m.type === 'oil_change')
   const lastBelt = maintenance.find(m => m.type === 'vbelt')
@@ -449,6 +531,12 @@ function BikeDetail({ bike }: { bike: Bike }) {
             <span className="text-white text-xs font-bold">Favorite</span>
           </div>
         )}
+        <button
+          onClick={() => setShowSharePicker(true)}
+          className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5 text-white text-xs font-semibold"
+        >
+          <Share2 size={12} /> Share
+        </button>
       </div>
 
       {/* Bike identity */}
@@ -519,7 +607,7 @@ function BikeDetail({ bike }: { bike: Bike }) {
       )}
 
       {/* Modifications */}
-      <ModificationsSection bike={bike} />
+      <ModificationsSection bike={bike} onShareMod={mod => setShareMod(mod)} />
 
       {/* Maintenance overview – key items */}
       <div className="bg-bg-card rounded-2xl p-4 border border-white/5">
@@ -584,8 +672,25 @@ function BikeDetail({ bike }: { bike: Bike }) {
         </div>
       )}
 
+      {/* Service history posts */}
+      <GarageActivitySection />
+
       {showAddMaint && (
         <AddMaintenanceModal bikeId={bike.id} odometer={bike.odometer} onClose={() => setShowAddMaint(false)} />
+      )}
+
+      {showSharePicker && (
+        <ConversationPicker
+          onSelect={convId => shareGarage(convId)}
+          onClose={() => setShowSharePicker(false)}
+        />
+      )}
+
+      {shareMod && (
+        <ConversationPicker
+          onSelect={convId => { shareGarage(convId, shareMod); setShareMod(null) }}
+          onClose={() => setShareMod(null)}
+        />
       )}
     </div>
   )

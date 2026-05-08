@@ -135,6 +135,14 @@ export default function OnboardingScreen() {
     e.target.value = ''
   }
 
+  const blobToDataUrl = (blob: Blob): Promise<string> =>
+    new Promise((res, rej) => {
+      const reader = new FileReader()
+      reader.onload = e => res(e.target!.result as string)
+      reader.onerror = rej
+      reader.readAsDataURL(blob)
+    })
+
   const handleCropDone = async (blob: Blob) => {
     setCropSrc(null)
     setUploading(true)
@@ -142,14 +150,20 @@ export default function OnboardingScreen() {
     try {
       if (isSupabaseReady && user) {
         const file = new File([blob], 'avatar.jpg', { type: 'image/jpeg' })
-        const url = await dbUploadAvatar(user.id, file)
-        setAvatar(url)
-      } else {
-        const url = URL.createObjectURL(blob)
-        setAvatar(url)
+        const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000))
+        try {
+          const url = await Promise.race([dbUploadAvatar(user.id, file), timeout])
+          setAvatar(url)
+          return
+        } catch {
+          // Fall through to data URL
+        }
       }
+      // Fallback: store as base64 data URL (persists in local state)
+      const dataUrl = await blobToDataUrl(blob)
+      setAvatar(dataUrl)
     } catch (e: any) {
-      setUploadError('Upload failed. Make sure the avatars bucket is created in Supabase.')
+      setUploadError('Could not process image. Please try again.')
     } finally {
       setUploading(false)
     }

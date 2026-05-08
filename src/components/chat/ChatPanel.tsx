@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useStore } from '../../store/useStore'
 import type { ChatMessage, Conversation, MusicTrack } from '../../types'
-import { ChevronLeft, Send, Mic, MicOff, Phone, PhoneOff, MapPin, Plus, X, Music, Play, Pause, SkipForward, SkipBack, Trash2, Youtube, Search, ListMusic, Repeat, Headphones } from 'lucide-react'
+import { ChevronLeft, Send, Mic, MicOff, Phone, PhoneOff, MapPin, Plus, X, Music, Play, Pause, SkipForward, SkipBack, Trash2, Youtube, Search, ListMusic, Repeat, Headphones, Wrench } from 'lucide-react'
+import { dbGetProfilesByIds } from '../../lib/db'
+import { isSupabaseReady } from '../../lib/supabase'
 import { useVAD } from '../../hooks/useVAD'
 import { searchYouTube, fetchVideoInfo, fetchPlaylistTracks, parseYouTubeInput, YT_API_KEY } from '../../lib/youtube'
 
@@ -477,12 +479,156 @@ function NowPlayingBubble({ msg }: { msg: ChatMessage }) {
   )
 }
 
+// ─── Garage Share Bubble ──────────────────────────────────────────────────────
+
+const GARAGE_REACTIONS = [
+  { emoji: '🔥', label: 'Lit' },
+  { emoji: '👍', label: 'Like' },
+  { emoji: '❤️', label: 'Love' },
+  { emoji: '⭐', label: 'Stars' },
+]
+
+function ReactionViewerSheet({ emoji, userIds, onClose }: { emoji: string; userIds: string[]; onClose: () => void }) {
+  const user = useStore(s => s.user)
+  const [profiles, setProfiles] = useState<{ id: string; name: string; avatar: string }[]>([])
+
+  useEffect(() => {
+    if (!isSupabaseReady || !userIds.length) return
+    dbGetProfilesByIds(userIds).then(setProfiles)
+  }, [userIds.join(',')])
+
+  const getName = (id: string) => {
+    if (id === user?.id) return 'You'
+    return profiles.find(p => p.id === id)?.name ?? id.slice(0, 8)
+  }
+  const getAvatar = (id: string) => {
+    if (id === user?.id) return user?.avatar ?? '🤙'
+    return profiles.find(p => p.id === id)?.avatar ?? '🤙'
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-bg-secondary rounded-t-3xl p-5 w-full max-w-lg max-h-[60vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-bold">{emoji} {userIds.length} {userIds.length === 1 ? 'person' : 'people'}</h3>
+          <button onClick={onClose} className="text-gray-400"><X size={18} /></button>
+        </div>
+        <div className="space-y-3">
+          {userIds.map(id => (
+            <div key={id} className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center text-lg overflow-hidden flex-shrink-0">
+                {getAvatar(id)?.startsWith('http')
+                  ? <img src={getAvatar(id)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  : getAvatar(id)}
+              </div>
+              <p className="text-white text-sm font-medium">{getName(id)}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GarageShareBubble({ msg, isMe }: { msg: ChatMessage; isMe: boolean }) {
+  const addReaction = useStore(s => s.addReaction)
+  const user = useStore(s => s.user)
+  const [viewerReaction, setViewerReaction] = useState<string | null>(null)
+  const data = msg.garageData!
+  const timeStr = new Date(msg.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+
+  const getCount = (emoji: string) => msg.reactions.find(r => r.emoji === emoji)?.userIds.length ?? 0
+  const hasReacted = (emoji: string) => msg.reactions.find(r => r.emoji === emoji)?.userIds.includes(user?.id ?? '') ?? false
+  const viewerUserIds = viewerReaction ? (msg.reactions.find(r => r.emoji === viewerReaction)?.userIds ?? []) : []
+
+  return (
+    <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-3`}>
+      <div className="w-[85%] max-w-xs">
+        {!isMe && <p className="text-gray-400 text-xs mb-1 ml-1">{msg.senderName}</p>}
+        <div className="bg-bg-card border border-white/10 rounded-2xl overflow-hidden">
+          {/* Header image / color band */}
+          <div
+            className="h-16 flex items-center justify-center relative"
+            style={{ backgroundColor: (data.brandColor ?? '#ff6b35') + '25' }}
+          >
+            {data.bikeImage
+              ? <img src={data.bikeImage} className="h-full w-full object-cover opacity-60" />
+              : <span className="text-4xl">🏍️</span>}
+            {data.mod && (
+              <div className="absolute top-2 left-2 bg-black/60 rounded-full px-2 py-0.5 flex items-center gap-1">
+                <Wrench size={10} className="text-accent" />
+                <span className="text-accent text-[10px] font-semibold">{data.mod.category.replace(/_/g, ' ')}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="px-3 pt-2 pb-1">
+            {data.mod ? (
+              <>
+                <p className="text-white font-bold text-sm">{data.mod.name}</p>
+                {data.mod.brand && <p className="text-gray-400 text-xs">{data.mod.brand}</p>}
+                <p className="text-gray-500 text-xs mt-0.5">on {data.bikeName}</p>
+              </>
+            ) : (
+              <p className="text-white font-bold text-sm">{data.bikeName}</p>
+            )}
+
+            {/* Reaction row */}
+            <div className="flex gap-1 mt-2 pb-1">
+              {GARAGE_REACTIONS.map(({ emoji, label }) => {
+                const count = getCount(emoji)
+                const reacted = hasReacted(emoji)
+                return (
+                  <div key={emoji} className="flex items-center gap-0.5">
+                    <button
+                      onClick={() => addReaction(msg.id, emoji, user?.id ?? 'rider-1')}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs border transition-all ${
+                        reacted
+                          ? 'bg-accent/20 border-accent/40 text-white'
+                          : 'bg-bg-surface border-white/10 text-gray-400'
+                      }`}
+                    >
+                      <span>{emoji}</span>
+                      {count > 0 && (
+                        <button
+                          onClick={e => { e.stopPropagation(); setViewerReaction(emoji) }}
+                          className="text-gray-300 font-semibold"
+                        >
+                          {count}
+                        </button>
+                      )}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        <p className={`text-gray-600 text-[10px] mt-0.5 px-1 ${isMe ? 'text-right' : ''}`}>{timeStr}</p>
+      </div>
+
+      {viewerReaction && (
+        <ReactionViewerSheet
+          emoji={viewerReaction}
+          userIds={viewerUserIds}
+          onClose={() => setViewerReaction(null)}
+        />
+      )}
+    </div>
+  )
+}
+
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
 function MessageBubble({ msg, isMe }: { msg: ChatMessage; isMe: boolean }) {
   const addReaction = useStore(s => s.addReaction)
+  const user = useStore(s => s.user)
+  const myId = user?.id ?? 'rider-1'
   const [showReactionPicker, setShowReactionPicker] = useState(false)
   const QUICK_REACTIONS = ['👍', '🔥', '😂', '🙏', '💯', '🤙']
+
+  if (msg.type === 'garage_share' && msg.garageData) return <GarageShareBubble msg={msg} isMe={isMe} />
 
   const timeStr = (d: Date) =>
     new Date(d).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
@@ -564,11 +710,15 @@ function MessageBubble({ msg, isMe }: { msg: ChatMessage; isMe: boolean }) {
             {msg.reactions.map(r => (
               <button
                 key={r.emoji}
-                onClick={() => addReaction(msg.id, r.emoji, 'rider-1')}
-                className="flex items-center gap-1 bg-bg-card border border-white/10 rounded-full px-2 py-0.5 text-xs"
+                onClick={() => addReaction(msg.id, r.emoji, myId)}
+                className={`flex items-center gap-1 border rounded-full px-2 py-0.5 text-xs transition-all ${
+                  r.userIds.includes(myId)
+                    ? 'bg-accent/20 border-accent/40'
+                    : 'bg-bg-card border-white/10'
+                }`}
               >
                 <span>{r.emoji}</span>
-                <span className="text-gray-400">{r.userIds.length}</span>
+                <span className="text-gray-300">{r.userIds.length}</span>
               </button>
             ))}
           </div>
@@ -579,7 +729,7 @@ function MessageBubble({ msg, isMe }: { msg: ChatMessage; isMe: boolean }) {
             {QUICK_REACTIONS.map(e => (
               <button
                 key={e}
-                onClick={() => { addReaction(msg.id, e, 'rider-1'); setShowReactionPicker(false) }}
+                onClick={() => { addReaction(msg.id, e, myId); setShowReactionPicker(false) }}
                 className="text-lg active:scale-125 transition-transform"
               >
                 {e}
@@ -725,7 +875,7 @@ function MessageView({ conv, onBack }: { conv: Conversation; onBack: () => void 
         <>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-0.5">
             {messages.map(msg => (
-              <MessageBubble key={msg.id} msg={msg} isMe={msg.senderId === 'rider-1'} />
+              <MessageBubble key={msg.id} msg={msg} isMe={msg.senderId === (useStore.getState().user?.id ?? 'rider-1')} />
             ))}
             <div ref={bottomRef} />
           </div>
@@ -752,6 +902,12 @@ function MessageView({ conv, onBack }: { conv: Conversation; onBack: () => void 
                     className="flex items-center gap-2 bg-bg-card border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-300"
                   >
                     <Music size={15} className="text-accent" /> Music
+                  </button>
+                  <button
+                    disabled
+                    className="flex items-center gap-2 bg-bg-card border border-white/10 rounded-xl px-3 py-2 text-sm text-gray-500 opacity-50 cursor-not-allowed"
+                  >
+                    🖼️ Media Gallery <span className="text-[10px] bg-bg-surface px-1.5 py-0.5 rounded-full ml-1">Soon</span>
                   </button>
                 </>
               )}
@@ -815,6 +971,7 @@ function ConvRow({ conv, onSelect }: { conv: Conversation; onSelect: () => void 
     if (last.type === 'ride_invite') return '🏍️ Ride invite'
     if (last.type === 'location') return '📍 Location shared'
     if (last.type === 'now_playing') return `🎵 ${last.musicData?.title ?? 'Music added'}`
+    if (last.type === 'garage_share') return `🔧 ${last.garageData?.mod ? last.garageData.mod.name : last.garageData?.bikeName ?? 'Garage share'}`
     if (last.type === 'system') return last.content
     return last.content
   }

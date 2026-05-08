@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Rider, Group, Bike, MaintenanceRecord, WeatherData, TabId, TripTemplate, ChatMessage, Conversation, VoiceChannelParticipant, MusicTrack, BikeModification, ModCategory } from '../types'
+import type { Rider, Group, Bike, MaintenanceRecord, WeatherData, TabId, TripTemplate, ChatMessage, Conversation, VoiceChannelParticipant, MusicTrack, BikeModification, ModCategory, ActivityPost, ActivityType, BadgeType, RideSession, RideWaypoint } from '../types'
 import {
   MOCK_RIDERS, MOCK_GROUPS, MOCK_BIKES, MOCK_MAINTENANCE, MOCK_TRIP_TEMPLATES,
   MOCK_CONVERSATIONS, MOCK_MESSAGES,
@@ -12,6 +12,8 @@ import {
   dbGetModifications, dbInsertModification, dbDeleteModification,
   dbGetConversations, dbGetMessages, dbSendMessage, dbMarkRead, dbToggleReaction,
   dbUpsertRider, dbUpdateLocation, dbSetRiderOffline,
+  dbGetActivityPosts, dbInsertActivityPost, dbDeleteActivityPost, dbTogglePostLike,
+  dbGetRideSessions, dbInsertRideSession,
 } from '../lib/db'
 
 export interface AuthUser {
@@ -21,6 +23,7 @@ export interface AuthUser {
   avatar: string
   provider: 'email' | 'google'
   location?: string
+  badges?: BadgeType[]
 }
 
 let locationInterval: ReturnType<typeof setInterval> | null = null
@@ -66,6 +69,19 @@ interface AppState {
   updateOdometer: (bikeId: string, km: number) => Promise<void>
   addMod: (bikeId: string, mod: Omit<BikeModification, 'id' | 'bikeId' | 'createdAt'>) => Promise<void>
   removeMod: (id: string) => Promise<void>
+
+  // Activity / Posts
+  activityPosts: ActivityPost[]
+  addActivityPost: (post: Omit<ActivityPost, 'id' | 'userId' | 'userName' | 'userAvatar' | 'badges' | 'createdAt' | 'likes' | 'likedBy'>) => Promise<void>
+  deleteActivityPost: (id: string) => Promise<void>
+  togglePostLike: (postId: string) => void
+
+  // Ride Sessions
+  rideSessions: RideSession[]
+  activeRideSession: RideSession | null
+  startRideSession: () => void
+  stopRideSession: () => void
+  recordRideWaypoint: (lat: number, lng: number, speed: number, heading: number, leanAngle?: number) => void
 
   // Explore
   tripTemplates: TripTemplate[]
@@ -228,6 +244,9 @@ export const useStore = create<AppState>()(
           conversations: isSupabaseReady ? [] : MOCK_CONVERSATIONS,
           messages: isSupabaseReady ? [] : MOCK_MESSAGES,
           riders: isSupabaseReady ? [] : MOCK_RIDERS,
+          activityPosts: [],
+          rideSessions: [],
+          activeRideSession: null,
         })
       },
 
@@ -247,15 +266,17 @@ export const useStore = create<AppState>()(
       loadUserData: async (userId: string) => {
         if (!isSupabaseReady) return
         try {
-          const [bikes, convs] = await Promise.all([
+          const [bikes, convs, activityPosts, rideSessions] = await Promise.all([
             dbGetBikes(userId),
             dbGetConversations(userId),
+            dbGetActivityPosts(userId),
+            dbGetRideSessions(userId),
           ])
           const bikeIds = bikes.map(b => b.id)
           const [maintenance, mods] = bikeIds.length
             ? await Promise.all([dbGetMaintenance(bikeIds), dbGetModifications(bikeIds)])
             : [[], []]
-          set({ bikes, maintenance, mods, conversations: convs })
+          set({ bikes, maintenance, mods, conversations: convs, activityPosts, rideSessions })
 
           // Upsert this user's rider row
           const user = get().user
@@ -373,6 +394,122 @@ export const useStore = create<AppState>()(
         if (isSupabaseReady) dbDeleteModification(id).catch(() => {})
       },
 
+      // Activity Posts
+      activityPosts: [],
+
+      addActivityPost: async (postData) => {
+        const user = get().user
+        const tempPost: ActivityPost = {
+          ...postData,
+          id: `post-${nextId++}`,
+          userId: user?.id ?? 'local',
+          userName: user?.name ?? 'Rider',
+          userAvatar: user?.avatar ?? '🤙',
+          badges: user?.badges ?? [],
+          createdAt: new Date(),
+          likes: 0,
+          likedBy: [],
+        }
+        set(state => ({ activityPosts: [tempPost, ...state.activityPosts] }))
+        if (isSupabaseReady && user) {
+          try {
+            const saved = await dbInsertActivityPost(user.id, user.name, user.avatar, user.badges ?? [], postData)
+            set(state => ({ activityPosts: state.activityPosts.map(p => p.id === tempPost.id ? saved : p) }))
+          } catch (e) { console.warn('dbInsertActivityPost failed', e) }
+        }
+      },
+
+      deleteActivityPost: async (id) => {
+        set(state => ({ activityPosts: state.activityPosts.filter(p => p.id !== id) }))
+        if (isSupabaseReady) dbDeleteActivityPost(id).catch(() => {})
+      },
+
+      togglePostLike: (postId) => {
+        const userId = get().user?.id ?? 'local'
+        set(state => ({
+          activityPosts: state.activityPosts.map(p => {
+            if (p.id !== postId) return p
+            const liked = p.likedBy.includes(userId)
+            return {
+              ...p,
+              likes: liked ? p.likes - 1 : p.likes + 1,
+              likedBy: liked ? p.likedBy.filter(id => id !== userId) : [...p.likedBy, userId],
+            }
+          }),
+        }))
+        if (isSupabaseReady) dbTogglePostLike(postId, userId).catch(() => {})
+      },
+
+      // Ride Sessions
+      rideSessions: [],
+      activeRideSession: null,
+
+      startRideSession: () => {
+        const user = get().user
+        const bikes = get().bikes
+        const activeBikeId = get().activeBikeId
+        const bike = bikes.find(b => b.id === activeBikeId)
+        const session: RideSession = {
+          id: `ride-${nextId++}`,
+          userId: user?.id ?? 'local',
+          bikeId: bike?.id,
+          bikeName: bike ? `${bike.year} ${bike.brand} ${bike.model}` : undefined,
+          startTime: new Date(),
+          distanceKm: 0,
+          maxSpeedKmh: 0,
+          avgSpeedKmh: 0,
+          route: [],
+          isActive: true,
+        }
+        set({ activeRideSession: session })
+      },
+
+      stopRideSession: () => {
+        const session = get().activeRideSession
+        if (!session) return
+        const endTime = new Date()
+        const durationMs = endTime.getTime() - session.startTime.getTime()
+        const totalSpeedReadings = session.route.filter(w => w.speed > 0)
+        const avgSpeed = totalSpeedReadings.length
+          ? totalSpeedReadings.reduce((sum, w) => sum + w.speed, 0) / totalSpeedReadings.length
+          : 0
+        const finished: RideSession = { ...session, endTime, durationMs, avgSpeedKmh: Math.round(avgSpeed), isActive: false }
+        set(state => ({
+          activeRideSession: null,
+          rideSessions: [finished, ...state.rideSessions],
+        }))
+        const userId = get().user?.id
+        if (isSupabaseReady && userId) {
+          dbInsertRideSession(userId, finished).catch(() => {})
+        }
+      },
+
+      recordRideWaypoint: (lat, lng, speed, heading, leanAngle) => {
+        set(state => {
+          const session = state.activeRideSession
+          if (!session) return state
+          const lastWp = session.route[session.route.length - 1]
+          let addedKm = 0
+          if (lastWp) {
+            const R = 6371
+            const dLat = (lat - lastWp.lat) * Math.PI / 180
+            const dLng = (lng - lastWp.lng) * Math.PI / 180
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(lastWp.lat * Math.PI / 180) * Math.cos(lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+            addedKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+          }
+          const waypoint: RideWaypoint = { lat, lng, timestamp: Date.now(), speed, heading }
+          return {
+            activeRideSession: {
+              ...session,
+              route: [...session.route, waypoint],
+              distanceKm: session.distanceKm + addedKm,
+              maxSpeedKmh: Math.max(session.maxSpeedKmh, speed),
+              maxLeanAngle: leanAngle !== undefined ? Math.max(session.maxLeanAngle ?? 0, Math.abs(leanAngle)) : session.maxLeanAngle,
+            },
+          }
+        })
+      },
+
       updateOdometer: async (bikeId, km) => {
         if (isSupabaseReady) dbUpdateOdometer(bikeId, km).catch(() => {})
         set(state => ({
@@ -389,9 +526,13 @@ export const useStore = create<AppState>()(
         locationInterval = setInterval(() => {
           if (!navigator.geolocation) return
           navigator.geolocation.getCurrentPosition(pos => {
-            const { latitude: lat, longitude: lng, speed } = pos.coords
-            dbUpdateLocation(riderId, lat, lng, Math.round((speed ?? 0) * 3.6), 0).catch(() => {})
-            get().updateRiderPosition(riderId, lat, lng, Math.round((speed ?? 0) * 3.6))
+            const { latitude: lat, longitude: lng, speed, heading } = pos.coords
+            const speedKmh = Math.round((speed ?? 0) * 3.6)
+            dbUpdateLocation(riderId, lat, lng, speedKmh, heading ?? 0).catch(() => {})
+            get().updateRiderPosition(riderId, lat, lng, speedKmh)
+            if (get().activeRideSession) {
+              get().recordRideWaypoint(lat, lng, speedKmh, heading ?? 0)
+            }
           }, undefined, { enableHighAccuracy: true, maximumAge: 3000 })
         }, 4000)
       },
