@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useStore } from '../../store/useStore'
+import { dbUploadAvatar } from '../../lib/db'
+import { isSupabaseReady } from '../../lib/supabase'
 import type { Bike } from '../../types'
 
 const AVATARS = ['🤙', '👊', '✊', '🏍️', '⚡', '🔥', '💨', '🎯', '🦅', '🐺', '🦁', '💀', '🚀', '⚔️', '🦊', '🐉']
@@ -35,6 +37,27 @@ export default function OnboardingScreen() {
   const [avatar, setAvatar] = useState(googlePhotoUrl ?? '🤙')
   const [location, setLocation] = useState('')
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    setUploading(true)
+    try {
+      if (isSupabaseReady) {
+        const url = await dbUploadAvatar(user.id, file)
+        setAvatar(url)
+      } else {
+        const reader = new FileReader()
+        reader.onload = ev => setAvatar(ev.target?.result as string)
+        reader.readAsDataURL(file)
+      }
+    } catch (e) {
+      console.warn('Avatar upload failed', e)
+    }
+    setUploading(false)
+  }
 
   const [brand, setBrand] = useState('')
   const [model, setModel] = useState('')
@@ -107,6 +130,27 @@ export default function OnboardingScreen() {
 
             <div className="mb-6">
               <label className="text-xs text-gray-400 mb-2 block">Avatar</label>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoUpload}
+              />
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full flex items-center gap-3 bg-bg-card border border-white/10 hover:border-white/20 rounded-xl px-3 py-2 mb-2 transition-all text-left"
+              >
+                <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-sm flex-shrink-0">
+                  {uploading ? (
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" />
+                  ) : '📷'}
+                </div>
+                <span className="text-sm text-white">{uploading ? 'Uploading…' : 'Upload photo from device'}</span>
+              </button>
 
               {googlePhotoUrl && (
                 <button
