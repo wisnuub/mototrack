@@ -5,10 +5,10 @@ export default {
     extend: {
       colors: {
         bg: {
-          primary: '#0c0c0e',
-          secondary: '#1a1a1f',
-          card: '#212127',
-          surface: '#2a2a32',
+          primary: '#0c0d13',
+          secondary: '#14151d',
+          card: '#1c1d27',
+          surface: '#242531',
         },
         accent: {
           DEFAULT: '#ff6b35',
