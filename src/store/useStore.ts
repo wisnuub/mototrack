@@ -7,7 +7,7 @@ import {
 } from '../data/mockData'
 import { isSupabaseReady } from '../lib/supabase'
 import {
-  dbSignIn, dbSignUp, dbSignInWithGoogle, dbSignOut, dbGetProfile,
+  dbSignIn, dbSignUp, dbSignInWithGoogle, dbSignOut, dbGetProfile, dbUpdateProfile,
   dbGetBikes, dbInsertBike, dbGetMaintenance, dbInsertMaintenance, dbUpdateOdometer,
   dbGetConversations, dbGetMessages, dbSendMessage, dbMarkRead, dbToggleReaction,
   dbUpsertRider, dbUpdateLocation, dbSetRiderOffline,
@@ -19,6 +19,7 @@ export interface AuthUser {
   email: string
   avatar: string
   provider: 'email' | 'google'
+  location?: string
 }
 
 let locationInterval: ReturnType<typeof setInterval> | null = null
@@ -34,6 +35,8 @@ interface AppState {
   loadUserData: (userId: string) => Promise<void>
   startLocationBroadcast: () => void
   stopLocationBroadcast: () => void
+  setupCompletedForUserId: string | null
+  completeSetup: (name: string, avatar: string, location: string, firstBike?: Omit<Bike, 'id'>) => Promise<void>
 
   // Navigation
   activeTab: TabId
@@ -213,7 +216,27 @@ export const useStore = create<AppState>()(
           if (user) await dbSetRiderOffline(`rider-${user.id.slice(0, 8)}`)
           await dbSignOut()
         }
-        set({ user: null, bikes: MOCK_BIKES, maintenance: MOCK_MAINTENANCE })
+        set({
+          user: null,
+          bikes: isSupabaseReady ? [] : MOCK_BIKES,
+          maintenance: isSupabaseReady ? [] : MOCK_MAINTENANCE,
+          conversations: isSupabaseReady ? [] : MOCK_CONVERSATIONS,
+          messages: isSupabaseReady ? [] : MOCK_MESSAGES,
+          riders: isSupabaseReady ? [] : MOCK_RIDERS,
+        })
+      },
+
+      setupCompletedForUserId: null,
+
+      completeSetup: async (name, avatar, location, firstBike) => {
+        const user = get().user
+        if (!user) return
+        if (isSupabaseReady) {
+          await dbUpdateProfile(user.id, name, avatar, location)
+        }
+        set(state => ({ user: { ...state.user!, name, avatar, location }, setupCompletedForUserId: user.id }))
+        if (firstBike) await get().addBike(firstBike)
+        await get().loadUserData(user.id)
       },
 
       loadUserData: async (userId: string) => {
@@ -225,9 +248,9 @@ export const useStore = create<AppState>()(
           ])
           const maintenance = bikes.length ? await dbGetMaintenance(bikes.map(b => b.id)) : []
           set({
-            bikes: bikes.length ? bikes : MOCK_BIKES,
-            maintenance: maintenance.length ? maintenance : MOCK_MAINTENANCE,
-            conversations: convs.length ? convs : MOCK_CONVERSATIONS,
+            bikes,
+            maintenance,
+            conversations: convs,
           })
 
           // Upsert this user's rider row
@@ -246,7 +269,7 @@ export const useStore = create<AppState>()(
       setActiveTab: (tab) => set({ activeTab: tab }),
 
       // Riders
-      riders: MOCK_RIDERS,
+      riders: isSupabaseReady ? [] : MOCK_RIDERS,
       updateRiderPosition: (riderId, lat, lng, speed) => {
         set(state => ({
           riders: state.riders.map(r =>
@@ -287,8 +310,8 @@ export const useStore = create<AppState>()(
       },
 
       // Bikes
-      bikes: MOCK_BIKES,
-      maintenance: MOCK_MAINTENANCE,
+      bikes: isSupabaseReady ? [] : MOCK_BIKES,
+      maintenance: isSupabaseReady ? [] : MOCK_MAINTENANCE,
       activeBikeId: 'bike-1',
 
       addMaintenanceRecord: async (record) => {
@@ -427,8 +450,8 @@ export const useStore = create<AppState>()(
       setTracking: (on) => set({ isTracking: on }),
 
       // Chat
-      conversations: MOCK_CONVERSATIONS,
-      messages: MOCK_MESSAGES,
+      conversations: isSupabaseReady ? [] : MOCK_CONVERSATIONS,
+      messages: isSupabaseReady ? [] : MOCK_MESSAGES,
       activeConversationId: null,
 
       setActiveConversation: async (id) => {
@@ -637,6 +660,7 @@ export const useStore = create<AppState>()(
         savedTripIds: state.savedTripIds,
         activeBikeId: state.activeBikeId,
         activeGroupId: state.activeGroupId,
+        setupCompletedForUserId: state.setupCompletedForUserId,
       }),
     }
   )

@@ -6,6 +6,7 @@ import { useRealtimeRiders } from './hooks/useRealtimeRiders'
 import { useRealtimeMessages } from './hooks/useRealtimeMessages'
 import BottomNav from './components/layout/BottomNav'
 import AuthScreen from './components/auth/AuthScreen'
+import OnboardingScreen from './components/auth/OnboardingScreen'
 import RideMap from './components/map/RideMap'
 import ChatPanel from './components/chat/ChatPanel'
 import MusicPlayer from './components/chat/MusicPlayer'
@@ -83,6 +84,7 @@ export default function App() {
   const startLocationBroadcast = useStore(s => s.startLocationBroadcast)
   const stopLocationBroadcast = useStore(s => s.stopLocationBroadcast)
   const activeConversationId = useStore(s => s.activeConversationId)
+  const setupCompletedForUserId = useStore(s => s.setupCompletedForUserId)
   const [rideMode, setRideMode] = useState<RideMode>('idle')
   const [showLauncher, setShowLauncher] = useState(false)
 
@@ -118,6 +120,7 @@ export default function App() {
   useRealtimeMessages(activeConversationId)
 
   if (!user) return <AuthScreen />
+  if (setupCompletedForUserId !== user.id) return <OnboardingScreen />
 
   const handleStartRide = (mode: RideMode) => {
     setRideMode(mode)
@@ -146,8 +149,10 @@ export default function App() {
             </button>
           )}
 
-          <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-sm">
-            {user.avatar}
+          <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-sm overflow-hidden">
+            {user.avatar?.startsWith('http')
+              ? <img src={user.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              : user.avatar}
           </div>
         </div>
       </header>

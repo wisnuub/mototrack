@@ -41,6 +41,10 @@ export async function dbGetProfile(userId: string) {
   return data
 }
 
+export async function dbUpdateProfile(userId: string, name: string, avatar: string, location?: string) {
+  await supabase.from('profiles').upsert({ id: userId, name, avatar, location })
+}
+
 // ─── Rider location ───────────────────────────────────────────
 
 export async function dbUpsertRider(userId: string, riderId: string, name: string, avatar: string, color: string) {
