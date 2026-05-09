@@ -111,7 +111,7 @@ function createStopIcon(emoji: string, arrived: boolean, num: number) {
   return L.divIcon({ html: svg, className: '', iconSize: [34, 42], iconAnchor: [17, 42], popupAnchor: [0, -42] })
 }
 
-function RecenterMap({ center, gpsGranted }: { center: [number, number]; gpsGranted: boolean }) {
+function RecenterMap({ center, gpsGranted, forceTick }: { center: [number, number]; gpsGranted: boolean; forceTick: number }) {
   const map = useMap()
   const firstGrant = useRef(false)
   useEffect(() => {
@@ -122,6 +122,10 @@ function RecenterMap({ center, gpsGranted }: { center: [number, number]; gpsGran
       map.setView(center, map.getZoom(), { animate: true })
     }
   }, [center, gpsGranted, map])
+  // Force snap on button tap
+  useEffect(() => {
+    if (forceTick > 0) map.setView(center, Math.max(map.getZoom(), 14), { animate: true })
+  }, [forceTick]) // eslint-disable-line react-hooks/exhaustive-deps
   return null
 }
 
@@ -603,8 +607,10 @@ function RideShareModal({ elapsed, distanceTraveled, avgSpeed, maxSpeed, stops, 
 
 // ─── RideMap ──────────────────────────────────────────────────────────────────
 
-export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, onResumeRide, onEndRide }: {
+export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDestinations = [], onStartRide, onPauseRide, onResumeRide, onEndRide }: {
   rideMode?: RideMode
+  rideStyle?: 'routed' | 'wind'
+  userDestinations?: string[]
   onStartRide?: () => void
   onPauseRide?: () => void
   onResumeRide?: () => void
@@ -626,12 +632,15 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
   const [lapCount, setLapCount] = useState(0)
   const [showShareCard, setShowShareCard] = useState(false)
   const [pendingEnd, setPendingEnd] = useState(false)
+  const [traveledSplitIdx, setTraveledSplitIdx] = useState(1)
+  const [forceCenterTick, setForceCenterTick] = useState(0)
   const [stops, setStops] = useState<RideStop[]>(DEMO_STOPS)
   const [arrivalNotif, setArrivalNotif] = useState<string | null>(null)
   const prevRideModeRef = useRef<RideMode>('idle')
   const [gpsState, setGpsState] = useState<'idle' | 'granted' | 'denied' | 'asking'>('asking')
   const [gpsErrorCode, setGpsErrorCode] = useState<number | null>(null)
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
+  const [hasGyro, setHasGyro] = useState(false)
   const [realPosition, setRealPosition] = useState<[number, number] | null>(null)
   const [mapTarget, setMapTarget] = useState<{ coords: [number, number]; name: string } | null>(null)
   const watchIdRef = useRef<number | null>(null)
@@ -671,8 +680,12 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
 
   useEffect(() => {
     startGpsWatch()
+    // Detect gyroscope: listen for one deviceorientation event — fires only on phones/tablets with IMU
+    const onOrient = () => { setHasGyro(true); window.removeEventListener('deviceorientation', onOrient) }
+    window.addEventListener('deviceorientation', onOrient)
     return () => {
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current)
+      window.removeEventListener('deviceorientation', onOrient)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -697,7 +710,16 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
   useEffect(() => {
     const prev = prevRideModeRef.current
     if (prev === 'idle' && (rideMode === 'solo' || rideMode === 'group')) {
-      setStops(DEMO_STOPS)
+      // Use user-defined destinations for routed rides, otherwise demo stops
+      const newStops: RideStop[] = (rideStyle === 'routed' && userDestinations.length > 0)
+        ? userDestinations.slice(0, DEMO_STOPS.length).map((name, i) => ({
+            ...DEMO_STOPS[i] ?? DEMO_STOPS[0],
+            id: `us-${i}`,
+            name,
+            arrived: false,
+          }))
+        : DEMO_STOPS.map(s => ({ ...s, arrived: false }))
+      setStops(newStops)
       setElapsed(0)
       setLapCount(0)
     }
@@ -753,14 +775,29 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
             maxZoom={19}
           />
 
-          {/* Route polyline — only during active ride */}
-          {rideMode !== 'idle' && routePositions.length > 0 && (
-            <>
-              <Polyline positions={routePositions} pathOptions={{ color: '#000', weight: 6, opacity: 0.25 }} />
-              <Polyline positions={routePositions} pathOptions={{ color: '#ff6b35', weight: 4, opacity: 0.9 }} />
-              <Polyline positions={routePositions.slice(0, 3)} pathOptions={{ color: '#ffffff', weight: 3, opacity: 0.35, dashArray: '8 8' }} />
-            </>
-          )}
+          {/* Route polylines — Google Maps style: orange past, grey future (group only) */}
+          {rideMode !== 'idle' && routePositions.length > 1 && (() => {
+            const ROUTE_DURATION_S = 1800
+            const progress = Math.min(elapsed / ROUTE_DURATION_S, 1)
+            const splitIdx = Math.max(1, Math.min(Math.floor(progress * routePositions.length), routePositions.length - 1))
+            if (splitIdx !== traveledSplitIdx) setTraveledSplitIdx(splitIdx)
+            const pastRoute = routePositions.slice(0, splitIdx + 1)
+            const futureRoute = routePositions.slice(splitIdx)
+            return (
+              <>
+                {/* Future route — only in group/routed mode */}
+                {rideMode === 'group' && futureRoute.length > 1 && <>
+                  <Polyline positions={futureRoute} pathOptions={{ color: '#1f2937', weight: 8, opacity: 0.9 }} />
+                  <Polyline positions={futureRoute} pathOptions={{ color: '#6b7280', weight: 5, opacity: 0.7, dashArray: '12 6' }} />
+                </>}
+                {/* Traveled route — orange, solid */}
+                {pastRoute.length > 1 && <>
+                  <Polyline positions={pastRoute} pathOptions={{ color: '#c2410c', weight: 8, opacity: 0.8 }} />
+                  <Polyline positions={pastRoute} pathOptions={{ color: '#ff6b35', weight: 5, opacity: 1 }} />
+                </>}
+              </>
+            )
+          })()}
 
           {/* Rider markers — other riders from store */}
           {riders.filter(r => r.position && r.id !== myRiderId).map(rider => (
@@ -861,7 +898,7 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
             </Marker>
           ))}
 
-          <RecenterMap center={mapTarget ? mapTarget.coords : (isTracking ? center : INDONESIA_CENTER)} gpsGranted={gpsState === 'granted'} />
+          <RecenterMap center={mapTarget ? mapTarget.coords : center} gpsGranted={gpsState === 'granted'} forceTick={forceCenterTick} />
         </MapContainer>
 
         {/* Group + destination overlay — only during active ride */}
@@ -1005,21 +1042,22 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
         <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1.5">
           {gpsState === 'granted' && gpsAccuracy !== null && (
             <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold border ${
-              gpsAccuracy <= 20
+              (gpsAccuracy <= 20 || hasGyro)
                 ? 'bg-moto-green/20 border-moto-green/30 text-moto-green'
                 : gpsAccuracy <= 100
                 ? 'bg-accent-amber/20 border-accent-amber/30 text-accent-amber'
                 : 'bg-moto-red/20 border-moto-red/30 text-moto-red'
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${gpsAccuracy <= 20 ? 'bg-moto-green' : gpsAccuracy <= 100 ? 'bg-accent-amber' : 'bg-moto-red'} animate-pulse`} />
-              {gpsAccuracy <= 20 ? '📱 Phone GPS' : gpsAccuracy <= 100 ? `±${gpsAccuracy}m` : `±${gpsAccuracy}m · weak`}
+              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${(gpsAccuracy <= 20 || hasGyro) ? 'bg-moto-green' : gpsAccuracy <= 100 ? 'bg-accent-amber' : 'bg-moto-red'}`} />
+              {hasGyro ? '📱 Phone · GPS' : gpsAccuracy <= 20 ? '📍 GPS' : gpsAccuracy <= 100 ? `±${gpsAccuracy}m` : `±${gpsAccuracy}m · weak`}
             </div>
           )}
           <button
-            className="bg-accent text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg text-xl"
-            onClick={() => setTracking(!isTracking)}
+            className="bg-accent text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg text-xl active:scale-90 transition-transform"
+            onClick={() => { if (!isTracking) setTracking(true); setForceCenterTick(t => t + 1) }}
+            title="Center to my location"
           >
-            {isTracking ? '📍' : '🧭'}
+            📍
           </button>
         </div>
       </div>
@@ -1052,7 +1090,7 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
           avgSpeed={avgSpeed}
           maxSpeed={maxSpeed}
           stops={stops}
-          routePositions={routePositions}
+          routePositions={routePositions.slice(0, traveledSplitIdx + 1)}
           myAvatar={myAvatar}
           userName={user?.name ?? 'Rider'}
           formatTime={formatTime}

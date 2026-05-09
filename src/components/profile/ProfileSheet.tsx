@@ -236,7 +236,7 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div>
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
+            <input ref={fileInputRef} type="file" accept="image/*" className="sr-only" onChange={handleImageSelect} />
             {imageDataUrl ? (
               <div className="relative">
                 <img src={imageDataUrl} alt="preview" className="w-full h-44 object-cover rounded-xl" />

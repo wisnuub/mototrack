@@ -1,14 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 32">
   <rect width="80" height="32" rx="7" fill="#0c0d13"/>
-  <defs>
-    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#ff6b35"/>
-      <stop offset="50%" stop-color="#ffd60a"/>
-      <stop offset="100%" stop-color="#ff6b35"/>
-    </linearGradient>
-  </defs>
-  <rect x="8" y="4" width="64" height="2" rx="1" fill="url(#g)"/>
-  <text x="40" y="24" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="900" font-size="17" letter-spacing="-0.5">
+  <text x="40" y="22" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-weight="900" font-size="17" letter-spacing="-0.5">
     <tspan fill="#ffffff">Moto</tspan><tspan fill="#ff6b35">Track</tspan>
   </text>
 </svg>

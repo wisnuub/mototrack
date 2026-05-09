@@ -642,7 +642,7 @@ function BikeDetail({ bike }: { bike: Bike }) {
         >
           <Camera size={12} /> {bike.photo ? 'Change Photo' : 'Add Photo'}
         </button>
-        <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
+        <input ref={photoRef} type="file" accept="image/*" className="sr-only" onChange={handlePhotoChange} />
 
         <button
           onClick={() => { toggleFavorite(bike.id); showToast(bike.isFavorite ? 'Removed from favorites' : 'Set as favorite!') }}

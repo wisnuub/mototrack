@@ -17,51 +17,240 @@ import ProfileSheet from './components/profile/ProfileSheet'
 import type { TabId, BadgeType } from './types'
 
 type RideMode = 'idle' | 'solo' | 'group' | 'paused'
+type RideStyle = 'routed' | 'wind'
 
-function RideLauncher({ onStart }: { onStart: (mode: RideMode) => void }) {
-  return (
-    <div className="fixed inset-0 z-20 bg-bg-primary/80 backdrop-blur-sm flex items-end justify-center">
-      <div className="bg-bg-secondary rounded-t-3xl w-full max-w-lg p-6 animate-slide-up pb-safe">
-        <div className="text-center mb-6">
+interface LaunchDest { id: string; name: string }
+type LaunchStep = 'mode' | 'style' | 'route' | 'caution'
+
+// ── 4-step Ride Launcher ─────────────────────────────────────────────────────
+
+function RideLauncher({
+  onStart,
+  onDismiss,
+}: {
+  onStart: (mode: RideMode, style: RideStyle, dests: LaunchDest[]) => void
+  onDismiss: () => void
+}) {
+  const [step, setStep] = useState<LaunchStep>('mode')
+  const [mode, setMode] = useState<'group' | 'solo'>('solo')
+  const [style, setStyle] = useState<RideStyle>('wind')
+  const [dests, setDests] = useState<LaunchDest[]>([])
+  const [destInput, setDestInput] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const addDest = () => {
+    if (!destInput.trim()) return
+    setDests(prev => [...prev, { id: `d-${Date.now()}`, name: destInput.trim() }])
+    setDestInput('')
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }
+
+  const moveDest = (idx: number, dir: -1 | 1) => {
+    const next = idx + dir
+    if (next < 0 || next >= dests.length) return
+    setDests(prev => {
+      const arr = [...prev]
+      ;[arr[idx], arr[next]] = [arr[next], arr[idx]]
+      return arr
+    })
+  }
+
+  // ── Step 1: Mode ─────────────────────────────────────────────────────────────
+  if (step === 'mode') return (
+    <div className="fixed inset-0 z-30 bg-bg-primary/80 backdrop-blur-sm flex items-end justify-center">
+      <div className="bg-bg-secondary rounded-t-3xl w-full max-w-lg animate-slide-up">
+        <div className="px-6 pt-6 pb-2 text-center">
           <p className="text-3xl mb-2">🏍️</p>
           <h2 className="text-white font-bold text-xl">Start a Ride</h2>
-          <p className="text-gray-400 text-sm mt-1">Choose how you want to ride today</p>
+          <p className="text-gray-400 text-sm mt-1">Who's riding today?</p>
         </div>
+        <div className="px-6 pb-2 space-y-3">
+          {[
+            { m: 'group' as const, icon: '👥', label: 'Group Ride', sub: 'Share live location with your crew', accent: true },
+            { m: 'solo'  as const, icon: '⚡', label: 'Solo Ride',  sub: 'Track your own stats and route',     accent: false },
+          ].map(({ m, icon, label, sub, accent }) => (
+            <button key={m} onClick={() => { setMode(m); setStep('style') }}
+              className={`w-full flex items-center gap-4 rounded-2xl p-4 text-left transition-all border ${
+                accent ? 'bg-accent/10 border-accent/30 hover:bg-accent/15' : 'bg-bg-card border-white/10 hover:border-white/20'
+              }`}>
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${accent ? 'bg-accent' : 'bg-bg-surface'}`}>{icon}</div>
+              <div>
+                <p className="text-white font-bold">{label}</p>
+                <p className="text-gray-400 text-sm">{sub}</p>
+              </div>
+              <span className="ml-auto text-gray-500">›</span>
+            </button>
+          ))}
+        </div>
+        <button onClick={onDismiss} className="w-full text-gray-500 text-sm py-4 pb-safe">Maybe later</button>
+      </div>
+    </div>
+  )
 
-        <div className="space-y-3">
-          <button
-            onClick={() => onStart('group')}
-            className="w-full flex items-center gap-4 bg-accent/10 border border-accent/30 rounded-2xl p-4 text-left hover:bg-accent/15 transition-all"
-          >
-            <div className="w-12 h-12 bg-accent rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
-              👥
-            </div>
-            <div>
-              <p className="text-white font-bold">Group Ride</p>
-              <p className="text-gray-400 text-sm">Ride with your crew. Share live location with your group.</p>
+  // ── Step 2: Style ─────────────────────────────────────────────────────────────
+  if (step === 'style') return (
+    <div className="fixed inset-0 z-30 bg-bg-primary/80 backdrop-blur-sm flex items-end justify-center">
+      <div className="bg-bg-secondary rounded-t-3xl w-full max-w-lg animate-slide-up">
+        <div className="px-6 pt-5 pb-2 flex items-center gap-3">
+          <button onClick={() => setStep('mode')} className="text-gray-400 text-lg">←</button>
+          <div>
+            <h2 className="text-white font-bold text-lg">How do you want to ride?</h2>
+            <p className="text-gray-500 text-xs">{mode === 'group' ? '👥 Group Ride' : '⚡ Solo Ride'}</p>
+          </div>
+        </div>
+        <div className="px-6 pb-2 space-y-3">
+          <button onClick={() => { setStyle('routed'); setStep('route') }}
+            className="w-full flex items-center gap-4 bg-bg-card border border-white/10 rounded-2xl p-4 text-left hover:border-accent/40 transition-all group">
+            <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center text-3xl flex-shrink-0 group-hover:bg-accent/20 transition-all">🗺️</div>
+            <div className="flex-1">
+              <p className="text-white font-bold">Routed Tour</p>
+              <p className="text-gray-400 text-sm mt-0.5">Plan your route with destinations and waypoints</p>
+              <p className="text-accent text-xs mt-1 font-medium">Turn-by-turn guidance · Stop tracking</p>
             </div>
           </button>
-
-          <button
-            onClick={() => onStart('solo')}
-            className="w-full flex items-center gap-4 bg-bg-card border border-white/10 rounded-2xl p-4 text-left hover:border-white/20 transition-all"
-          >
-            <div className="w-12 h-12 bg-bg-surface rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
-              ⚡
-            </div>
-            <div>
-              <p className="text-white font-bold">Solo Ride</p>
-              <p className="text-gray-400 text-sm">Ride alone. Track your stats, route, and ride time.</p>
+          <button onClick={() => { setStyle('wind'); setStep('caution') }}
+            className="w-full flex items-center gap-4 bg-bg-card border border-white/10 rounded-2xl p-4 text-left hover:border-white/25 transition-all group">
+            <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-3xl flex-shrink-0 group-hover:bg-white/10 transition-all">💨</div>
+            <div className="flex-1">
+              <p className="text-white font-bold">Just Feeling the Wind</p>
+              <p className="text-gray-400 text-sm mt-0.5">Ride free — no destination, just open road</p>
+              <p className="text-gray-500 text-xs mt-1">Stats tracking · No navigation</p>
             </div>
           </button>
         </div>
+        <div className="h-6 pb-safe" />
+      </div>
+    </div>
+  )
 
-        <button
-          onClick={() => onStart('idle')}
-          className="w-full text-gray-500 text-sm mt-4 py-2"
-        >
-          Maybe later
-        </button>
+  // ── Step 3: Route Builder ─────────────────────────────────────────────────────
+  if (step === 'route') return (
+    <div className="fixed inset-0 z-30 bg-bg-primary flex flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 pt-safe pt-4 pb-3 border-b border-white/5 bg-bg-primary flex-shrink-0">
+        <button onClick={() => setStep('style')} className="text-gray-400 text-xl w-8">←</button>
+        <div className="flex-1">
+          <h2 className="text-white font-bold text-lg">Plan Your Route</h2>
+          <p className="text-gray-500 text-xs">{dests.length === 0 ? 'Add at least one destination' : `${dests.length} stop${dests.length > 1 ? 's' : ''} added`}</p>
+        </div>
+        {dests.length > 0 && (
+          <button onClick={() => setStep('caution')}
+            className="bg-accent text-white text-sm font-bold px-4 py-2 rounded-xl active:scale-95 transition-all">
+            Next →
+          </button>
+        )}
+      </div>
+
+      {/* Stops list */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {/* Start indicator */}
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-8 h-8 rounded-full bg-moto-green/20 border-2 border-moto-green flex items-center justify-center flex-shrink-0">
+            <div className="w-2.5 h-2.5 rounded-full bg-moto-green" />
+          </div>
+          <div className="flex-1 py-2 px-3 bg-moto-green/10 border border-moto-green/20 rounded-xl">
+            <p className="text-moto-green text-sm font-semibold">Your current location</p>
+            <p className="text-gray-500 text-xs">Starting point</p>
+          </div>
+        </div>
+
+        {/* Connector line */}
+        {dests.length > 0 && <div className="ml-4 w-px h-3 bg-white/15 mb-0" />}
+
+        {/* Destination items */}
+        <div className="space-y-0">
+          {dests.map((dest, i) => (
+            <div key={dest.id}>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-accent/20 border-2 border-accent flex items-center justify-center flex-shrink-0 text-accent text-xs font-bold">
+                  {i + 1}
+                </div>
+                <div className="flex-1 py-2 px-3 bg-bg-card border border-white/8 rounded-xl flex items-center gap-2">
+                  <span className="text-base">📍</span>
+                  <p className="text-white text-sm font-medium flex-1">{dest.name}</p>
+                  <div className="flex gap-1">
+                    {i > 0 && (
+                      <button onClick={() => moveDest(i, -1)} className="w-6 h-6 rounded-lg bg-white/8 text-gray-400 text-xs flex items-center justify-center">↑</button>
+                    )}
+                    {i < dests.length - 1 && (
+                      <button onClick={() => moveDest(i, 1)} className="w-6 h-6 rounded-lg bg-white/8 text-gray-400 text-xs flex items-center justify-center">↓</button>
+                    )}
+                    <button onClick={() => setDests(prev => prev.filter(d => d.id !== dest.id))}
+                      className="w-6 h-6 rounded-lg bg-moto-red/10 text-moto-red text-xs flex items-center justify-center">✕</button>
+                  </div>
+                </div>
+              </div>
+              {i < dests.length - 1 && <div className="ml-4 w-px h-3 bg-white/15 my-0" />}
+            </div>
+          ))}
+        </div>
+
+        {dests.length === 0 && (
+          <div className="mt-6 text-center py-8">
+            <p className="text-4xl mb-3">🗺️</p>
+            <p className="text-white font-semibold">No stops yet</p>
+            <p className="text-gray-500 text-sm mt-1">Add destinations below to plan your tour</p>
+          </div>
+        )}
+      </div>
+
+      {/* Add destination input */}
+      <div className="px-4 pb-safe pb-6 pt-3 border-t border-white/5 bg-bg-primary flex-shrink-0">
+        <div className="flex gap-2">
+          <input
+            ref={inputRef}
+            value={destInput}
+            onChange={e => setDestInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addDest()}
+            placeholder="e.g. Kintamani, Tanah Lot, Seminyak..."
+            className="flex-1 bg-bg-card border border-white/15 rounded-2xl px-4 py-3 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-accent/60"
+            autoFocus
+          />
+          <button onClick={addDest}
+            className="w-12 h-12 bg-accent rounded-2xl flex items-center justify-center text-white text-xl font-bold active:scale-95 transition-all flex-shrink-0">
+            +
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ── Step 4: Caution ───────────────────────────────────────────────────────────
+  return (
+    <div className="fixed inset-0 z-30 bg-bg-primary/90 backdrop-blur-sm flex items-end justify-center">
+      <div className="bg-bg-secondary rounded-t-3xl w-full max-w-lg animate-slide-up">
+        <div className="px-6 pt-7 pb-2 text-center">
+          <div className="w-16 h-16 bg-accent-amber/15 rounded-full flex items-center justify-center text-4xl mx-auto mb-4">🛡️</div>
+          <h2 className="text-white font-bold text-xl">Ride Safe</h2>
+          <p className="text-gray-400 text-sm mt-1">A quick reminder before you head out</p>
+        </div>
+        <div className="px-6 pb-4 space-y-2.5">
+          {[
+            { icon: '⛑️', text: 'Always wear your helmet and riding gear' },
+            { icon: '🚦', text: 'Obey traffic signals and local road rules' },
+            { icon: '📱', text: 'No phone use while riding — stay focused' },
+            { icon: '💡', text: 'Keep your lights on and stay visible' },
+            { icon: '⛽', text: 'Check your fuel and tyre pressure before long tours' },
+          ].map(r => (
+            <div key={r.icon} className="flex items-center gap-3 bg-bg-card rounded-xl px-4 py-2.5 border border-white/5">
+              <span className="text-lg flex-shrink-0">{r.icon}</span>
+              <p className="text-gray-300 text-sm">{r.text}</p>
+            </div>
+          ))}
+        </div>
+        <div className="px-6 pb-safe pb-6">
+          <button
+            onClick={() => onStart(mode, style, dests)}
+            className="w-full bg-moto-green text-white font-black text-base py-4 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all shadow-lg shadow-moto-green/20"
+          >
+            <span className="text-xl">🏍️</span>
+            I'm Ready — Start Riding
+          </button>
+          <button onClick={() => setStep(style === 'routed' && dests.length > 0 ? 'route' : 'style')}
+            className="w-full text-gray-500 text-sm mt-3 py-2">
+            ← Go back
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -184,6 +373,8 @@ export default function App() {
   const activeConversationId = useStore(s => s.activeConversationId)
   const setupCompletedForUserId = useStore(s => s.setupCompletedForUserId)
   const [rideMode, setRideMode] = useState<RideMode>('idle')
+  const [rideStyle, setRideStyle] = useState<RideStyle>('wind')
+  const [rideDestinations, setRideDestinations] = useState<LaunchDest[]>([])
   const [showLauncher, setShowLauncher] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
 
@@ -228,8 +419,10 @@ export default function App() {
   if (!user) return <AuthScreen />
   if (setupCompletedForUserId !== user.id) return <OnboardingScreen />
 
-  const handleStartRide = (mode: RideMode) => {
+  const handleStartRide = (mode: RideMode, style: RideStyle = 'wind', dests: LaunchDest[] = []) => {
     setRideMode(mode)
+    setRideStyle(style)
+    setRideDestinations(dests)
     setShowLauncher(false)
     if (mode !== 'idle') setActiveTab('map')
   }
@@ -267,7 +460,7 @@ export default function App() {
 
       {/* Content */}
       <main className="flex-1 overflow-hidden relative">
-        {activeTab === 'map'     && <RideMap rideMode={rideMode} onStartRide={() => setRideMode('solo')} onPauseRide={() => setRideMode('paused')} onResumeRide={() => setRideMode('solo')} onEndRide={() => setRideMode('idle')} />}
+        {activeTab === 'map'     && <RideMap rideMode={rideMode} rideStyle={rideStyle} userDestinations={rideDestinations.map(d => d.name)} onStartRide={() => setShowLauncher(true)} onPauseRide={() => setRideMode('paused')} onResumeRide={() => setRideMode('solo')} onEndRide={() => { setRideMode('idle'); setRideStyle('wind'); setRideDestinations([]) }} />}
         {activeTab === 'chat'    && <div className="h-full overflow-hidden"><ChatPanel /></div>}
         {activeTab === 'explore' && <div className="h-full overflow-hidden"><ExplorePanel /></div>}
         {activeTab === 'garage'  && <div className="h-full overflow-hidden"><GaragePanel /></div>}
@@ -278,7 +471,12 @@ export default function App() {
       <BottomNav active={activeTab} onChange={setActiveTab} />
 
       {/* Ride launcher overlay */}
-      {showLauncher && <RideLauncher onStart={handleStartRide} />}
+      {showLauncher && (
+        <RideLauncher
+          onStart={(mode, style, dests) => handleStartRide(mode, style, dests)}
+          onDismiss={() => setShowLauncher(false)}
+        />
+      )}
 
       {/* Profile sheet */}
       {showProfile && <ProfileSheet onClose={() => setShowProfile(false)} />}

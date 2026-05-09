@@ -464,7 +464,7 @@ export default function OnboardingScreen() {
       )}
 
       {/* Hidden file input */}
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+      <input ref={fileInputRef} type="file" accept="image/*" className="sr-only" onChange={handleFileSelect} />
 
       {/* Screens container */}
       <div className="relative flex-1">
