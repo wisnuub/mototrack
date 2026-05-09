@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useStore } from '../../store/useStore'
-import { Plus, Wrench, Gauge, X, AlertTriangle, Star, ChevronRight, Trash2, ExternalLink, Share2 } from 'lucide-react'
+import { Plus, Wrench, Gauge, X, AlertTriangle, Star, ChevronRight, Trash2, ExternalLink, Share2, Camera, Edit2 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import type { MaintenanceType, MaintenanceRecord, Bike, ModCategory, BikeModification, GarageShareData } from '../../types'
 import AddBikeModal, { BikePlaceholder, BrandLogo } from './AddBikeModal'
@@ -481,15 +481,116 @@ function GarageActivitySection() {
   )
 }
 
+// ── Edit Bike Modal ───────────────────────────────────────────────────────────
+
+function EditBikeModal({ bike, onClose }: { bike: Bike; onClose: () => void }) {
+  const updateBike = useStore(s => s.updateBike)
+  const deleteBike = useStore(s => s.deleteBike)
+  const [nickname, setNickname] = useState(bike.nickname)
+  const [plate, setPlate] = useState(bike.plateNumber ?? '')
+  const [odometer, setOdometer] = useState(String(bike.odometer))
+  const [notes, setNotes] = useState(bike.notes ?? '')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const save = () => {
+    updateBike(bike.id, {
+      nickname: nickname.trim() || bike.nickname,
+      plateNumber: plate.trim() || undefined,
+      odometer: parseInt(odometer) || bike.odometer,
+      notes: notes.trim() || undefined,
+    })
+    onClose()
+  }
+
+  const handleDelete = () => {
+    deleteBike(bike.id)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-bg-secondary rounded-t-3xl p-5 w-full max-w-lg animate-slide-up max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-white font-bold text-lg">Edit Motorcycle</h3>
+          <button onClick={onClose} className="text-gray-400"><X size={20} /></button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs text-gray-400 mb-1.5 block">Nickname</label>
+            <input value={nickname} onChange={e => setNickname(e.target.value)}
+              className="w-full bg-bg-card border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-accent" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1.5 block">Plate Number <span className="text-gray-600">(optional)</span></label>
+            <input value={plate} onChange={e => setPlate(e.target.value.toUpperCase())}
+              placeholder="e.g. DK 4251 AB"
+              className="w-full bg-bg-card border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 text-sm font-mono uppercase focus:outline-none focus:border-accent" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1.5 block">Odometer (km)</label>
+            <input type="number" value={odometer} onChange={e => setOdometer(e.target.value)} min={0}
+              className="w-full bg-bg-card border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-accent" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1.5 block">Notes</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+              placeholder="Mods, history, special info…"
+              className="w-full bg-bg-card border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-accent resize-none" />
+          </div>
+
+          <button onClick={save} className="w-full bg-accent text-white font-bold py-3.5 rounded-2xl text-base">
+            Save Changes
+          </button>
+
+          {!confirmDelete ? (
+            <button onClick={() => setConfirmDelete(true)}
+              className="w-full flex items-center justify-center gap-2 text-moto-red text-sm py-2">
+              <Trash2 size={14} /> Delete Motorcycle
+            </button>
+          ) : (
+            <div className="bg-moto-red/10 border border-moto-red/30 rounded-2xl p-4 space-y-3">
+              <p className="text-white font-semibold text-sm text-center">Delete {bike.nickname}?</p>
+              <p className="text-gray-400 text-xs text-center">All maintenance records and mods will be removed.</p>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmDelete(false)}
+                  className="flex-1 bg-bg-card text-gray-300 font-semibold py-2.5 rounded-xl text-sm">
+                  Cancel
+                </button>
+                <button onClick={handleDelete}
+                  className="flex-1 bg-moto-red text-white font-semibold py-2.5 rounded-xl text-sm">
+                  Delete
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Bike detail view ──────────────────────────────────────────────────────────
 
 function BikeDetail({ bike }: { bike: Bike }) {
   const maintenance = useStore(s => s.maintenance.filter(m => m.bikeId === bike.id)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()))
   const sendMessage = useStore(s => s.sendMessage)
+  const updateBike = useStore(s => s.updateBike)
+  const photoRef = useRef<HTMLInputElement>(null)
   const [showAddMaint, setShowAddMaint] = useState(false)
   const [showSharePicker, setShowSharePicker] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
   const [shareMod, setShareMod] = useState<BikeModification | null>(null)
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => updateBike(bike.id, { photo: ev.target?.result as string })
+    reader.readAsDataURL(file)
+  }
 
   const shareGarage = (convId: string, mod?: BikeModification) => {
     const garageData: GarageShareData = {
@@ -516,7 +617,7 @@ function BikeDetail({ bike }: { bike: Bike }) {
 
   return (
     <div className="space-y-4">
-      {/* Hero image */}
+      {/* Hero image with photo upload + edit/share buttons */}
       <div className="relative">
         <BikePlaceholder
           brand={bike.brand}
@@ -525,18 +626,35 @@ function BikeDetail({ bike }: { bike: Bike }) {
           imageUrl={bike.photo ?? bike.imageUrl}
           size="lg"
         />
+        {/* Camera upload overlay */}
+        <button
+          onClick={() => photoRef.current?.click()}
+          className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5 text-white text-xs font-semibold"
+        >
+          <Camera size={12} /> {bike.photo ? 'Change Photo' : 'Add Photo'}
+        </button>
+        <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
+
         {bike.isFavorite && (
           <div className="absolute top-3 left-3 flex items-center gap-1 bg-accent-amber/90 rounded-full px-2.5 py-1">
             <Star size={11} fill="white" className="text-white" />
             <span className="text-white text-xs font-bold">Favorite</span>
           </div>
         )}
-        <button
-          onClick={() => setShowSharePicker(true)}
-          className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5 text-white text-xs font-semibold"
-        >
-          <Share2 size={12} /> Share
-        </button>
+        <div className="absolute top-3 right-3 flex items-center gap-2">
+          <button
+            onClick={() => setShowEdit(true)}
+            className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5 text-white text-xs font-semibold"
+          >
+            <Edit2 size={12} /> Edit
+          </button>
+          <button
+            onClick={() => setShowSharePicker(true)}
+            className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5 text-white text-xs font-semibold"
+          >
+            <Share2 size={12} /> Share
+          </button>
+        </div>
       </div>
 
       {/* Bike identity */}
@@ -677,6 +795,10 @@ function BikeDetail({ bike }: { bike: Bike }) {
 
       {showAddMaint && (
         <AddMaintenanceModal bikeId={bike.id} odometer={bike.odometer} onClose={() => setShowAddMaint(false)} />
+      )}
+
+      {showEdit && (
+        <EditBikeModal bike={bike} onClose={() => setShowEdit(false)} />
       )}
 
       {showSharePicker && (

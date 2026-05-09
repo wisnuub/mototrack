@@ -252,7 +252,7 @@ export default function AddBikeModal({ onClose }: AddBikeModalProps) {
 
   const canProceed = () => {
     if (step === 'brand')   return brand !== null
-    if (step === 'model')   return model !== null && plateNumber.trim().length > 0
+    if (step === 'model')   return model !== null
     if (step === 'details') return nickname.trim().length > 0
     return true // optional steps always passable
   }

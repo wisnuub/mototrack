@@ -142,8 +142,7 @@ export default function App() {
       {/* Header */}
       <header className="flex-shrink-0 bg-bg-primary/95 backdrop-blur-sm border-b border-white/5 px-4 pt-safe flex items-center justify-between h-14">
         <div className="flex items-center gap-2">
-          <img src="/logo.svg" className="w-7 h-7 rounded-lg" alt="MotoTrack" />
-          <span className="text-white font-bold text-base tracking-tight">MotoTrack</span>
+          <span className="font-bold text-base tracking-tight"><span className="text-white">Moto</span><span className="text-accent">Track</span></span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -171,7 +170,7 @@ export default function App() {
 
       {/* Content */}
       <main className="flex-1 overflow-hidden relative">
-        {activeTab === 'map'     && <RideMap />}
+        {activeTab === 'map'     && <RideMap rideMode={rideMode} onEndRide={() => setRideMode('idle')} />}
         {activeTab === 'chat'    && <div className="h-full overflow-hidden"><ChatPanel /></div>}
         {activeTab === 'explore' && <div className="h-full overflow-hidden"><ExplorePanel /></div>}
         {activeTab === 'garage'  && <div className="h-full overflow-hidden"><GaragePanel /></div>}

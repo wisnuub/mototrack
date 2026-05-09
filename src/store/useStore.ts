@@ -64,6 +64,8 @@ interface AppState {
   mods: BikeModification[]
   activeBikeId: string | null
   addBike: (bike: Omit<Bike, 'id'>) => Promise<void>
+  updateBike: (bikeId: string, updates: Partial<Bike>) => void
+  deleteBike: (bikeId: string) => void
   setActiveBike: (bikeId: string) => void
   addMaintenanceRecord: (record: Omit<MaintenanceRecord, 'id'>) => Promise<void>
   updateOdometer: (bikeId: string, km: number) => Promise<void>
@@ -376,6 +378,22 @@ export const useStore = create<AppState>()(
           bikes: [...state.bikes, newBike],
           activeBikeId: bikeData.isFavorite ? newBike.id : state.activeBikeId,
         }))
+      },
+
+      updateBike: (bikeId, updates) => {
+        set(state => ({
+          bikes: state.bikes.map(b => b.id === bikeId ? { ...b, ...updates } : b)
+        }))
+      },
+
+      deleteBike: (bikeId) => {
+        set(state => {
+          const remaining = state.bikes.filter(b => b.id !== bikeId)
+          return {
+            bikes: remaining,
+            activeBikeId: state.activeBikeId === bikeId ? (remaining[0]?.id ?? null) : state.activeBikeId,
+          }
+        })
       },
 
       setActiveBike: (bikeId) => set({ activeBikeId: bikeId }),

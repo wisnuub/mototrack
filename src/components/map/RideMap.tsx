@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -6,6 +6,8 @@ import { useStore } from '../../store/useStore'
 import { useRideSimulation } from '../../hooks/useRideSimulation'
 import { BALI_CENTER, KINTAMANI_ROUTE } from '../../data/mockData'
 import type { Rider } from '../../types'
+
+type RideMode = 'idle' | 'solo' | 'group'
 
 // Fix Leaflet default icon
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -90,7 +92,7 @@ function LiveStat({ label, value, sub }: LiveStatProps) {
   )
 }
 
-export default function RideMap() {
+export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: RideMode; onEndRide?: () => void }) {
   const riders = useStore(s => s.riders)
   const groups = useStore(s => s.groups)
   const activeGroupId = useStore(s => s.activeGroupId)
@@ -99,30 +101,34 @@ export default function RideMap() {
 
   const [elapsed, setElapsed] = useState(0)
   const [startTime] = useState<number>(Date.now() - 12 * 60 * 1000)
-  const [gpsState, setGpsState] = useState<'idle' | 'granted' | 'denied' | 'asking'>('idle')
+  const [gpsState, setGpsState] = useState<'idle' | 'granted' | 'denied' | 'asking'>('asking')
+  const [realPosition, setRealPosition] = useState<[number, number] | null>(null)
+  const watchIdRef = useRef<number | null>(null)
 
   useRideSimulation(true)
 
-  // Request GPS permission — browser shows native prompt
-  const requestGps = () => {
+  // Auto-request GPS on mount — mandatory for map use
+  useEffect(() => {
     if (!navigator.geolocation) { setGpsState('denied'); return }
-    setGpsState('asking')
-    navigator.geolocation.getCurrentPosition(
+    const watchId = navigator.geolocation.watchPosition(
       (pos) => {
+        const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude]
+        setRealPosition(coords)
         setGpsState('granted')
-        // In a real app: send pos.coords to the server to update rider position
-        console.log('GPS granted:', pos.coords.latitude, pos.coords.longitude)
       },
       () => setGpsState('denied'),
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 15000 }
     )
-  }
+    watchIdRef.current = watchId
+    return () => {
+      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current)
+    }
+  }, [])
 
   const activeGroup = groups.find(g => g.id === activeGroupId)
   const me = riders.find(r => r.id === 'rider-1')
-  const center: [number, number] = me
-    ? [me.position.lat, me.position.lng]
-    : BALI_CENTER
+  // Use real GPS coords when available, else fall back to mock rider position
+  const center: [number, number] = realPosition ?? (me ? [me.position.lat, me.position.lng] : BALI_CENTER)
 
   const distanceTraveled = 14.2 // km simulated
   const avgSpeed = 58 // km/h simulated
@@ -243,30 +249,27 @@ export default function RideMap() {
           </div>
         </div>
 
-        {/* GPS permission button */}
-        {gpsState === 'idle' && (
-          <button
-            onClick={requestGps}
-            className="absolute bottom-20 right-4 z-10 bg-bg-primary/90 border border-accent/40 text-accent rounded-2xl px-3 py-2 flex items-center gap-2 text-xs font-semibold shadow-lg backdrop-blur-sm"
-          >
-            📍 Enable GPS
-          </button>
-        )}
+        {/* GPS status badges */}
         {gpsState === 'asking' && (
-          <div className="absolute bottom-20 right-4 z-10 bg-bg-primary/90 border border-white/10 text-gray-400 rounded-2xl px-3 py-2 flex items-center gap-2 text-xs shadow-lg">
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-bg-primary/90 border border-white/10 text-gray-400 rounded-2xl px-4 py-2.5 flex items-center gap-2 text-xs shadow-lg backdrop-blur-sm">
             <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-            Waiting…
-          </div>
-        )}
-        {gpsState === 'granted' && (
-          <div className="absolute bottom-20 right-4 z-10 bg-moto-green/20 border border-moto-green/30 text-moto-green rounded-2xl px-3 py-2 flex items-center gap-2 text-xs font-semibold shadow-lg">
-            ✅ GPS Active
+            Locating you…
           </div>
         )}
         {gpsState === 'denied' && (
-          <div className="absolute bottom-20 right-4 z-10 bg-moto-red/20 border border-moto-red/30 text-moto-red rounded-2xl px-3 py-2 text-xs font-semibold shadow-lg">
-            GPS blocked — check browser settings
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-moto-red/20 border border-moto-red/30 text-moto-red rounded-2xl px-4 py-2.5 text-xs font-semibold shadow-lg backdrop-blur-sm text-center">
+            📍 GPS blocked — enable in browser settings
           </div>
+        )}
+
+        {/* Stop Ride button — visible when a ride is active */}
+        {rideMode !== 'idle' && onEndRide && (
+          <button
+            onClick={onEndRide}
+            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10 bg-moto-red text-white font-bold px-6 py-3 rounded-2xl flex items-center gap-2 text-sm shadow-lg"
+          >
+            ■ Stop Ride
+          </button>
         )}
 
         {/* Track/center button */}
