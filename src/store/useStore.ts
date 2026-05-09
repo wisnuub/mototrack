@@ -118,6 +118,11 @@ interface AppState {
   isTracking: boolean
   setTracking: (on: boolean) => void
 
+  // Social
+  following: string[]
+  followUser: (riderId: string) => void
+  unfollowUser: (riderId: string) => void
+
   // Chat
   conversations: Conversation[]
   messages: ChatMessage[]
@@ -706,6 +711,15 @@ export const useStore = create<AppState>()(
       isTracking: false,
       setTracking: (on) => set({ isTracking: on }),
 
+      // Social
+      following: [],
+      followUser: (riderId) => set(state => ({
+        following: state.following.includes(riderId) ? state.following : [...state.following, riderId],
+      })),
+      unfollowUser: (riderId) => set(state => ({
+        following: state.following.filter(id => id !== riderId),
+      })),
+
       // Chat
       conversations: isSupabaseReady ? [] : MOCK_CONVERSATIONS,
       messages: isSupabaseReady ? [] : MOCK_MESSAGES,
@@ -948,6 +962,7 @@ export const useStore = create<AppState>()(
         activeGroupId: state.activeGroupId,
         setupCompletedForUserId: state.setupCompletedForUserId,
         eventInteractions: state.eventInteractions,
+        following: state.following,
       }),
     }
   )
