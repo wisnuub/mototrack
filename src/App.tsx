@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useStore } from './store/useStore'
 import { supabase, isSupabaseReady } from './lib/supabase'
 import { dbGetProfile, dbGetAdminProfile } from './lib/db'
@@ -65,6 +65,103 @@ function RideLauncher({ onStart }: { onStart: (mode: RideMode) => void }) {
       </div>
     </div>
   )
+}
+
+// ── Install / Add-to-Home-Screen banner ───────────────────────────────────────
+
+function InstallBanner() {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [visible, setVisible] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !/CriOS|FxiOS/.test(navigator.userAgent)
+  const isStandalone = ('standalone' in navigator && (navigator as any).standalone) || window.matchMedia('(display-mode: standalone)').matches
+  const isDismissed = () => {
+    const ts = localStorage.getItem('install-dismissed')
+    if (!ts) return false
+    return Date.now() - Number(ts) < 14 * 24 * 60 * 60 * 1000 // 14 days
+  }
+
+  useEffect(() => {
+    if (isStandalone || isDismissed()) return
+
+    const handler = (e: Event) => { e.preventDefault(); setDeferredPrompt(e) }
+    window.addEventListener('beforeinstallprompt', handler)
+
+    // Show after a short delay so user can orient themselves first
+    timerRef.current = setTimeout(() => setVisible(true), 6000)
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler)
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [])
+
+  const dismiss = () => {
+    localStorage.setItem('install-dismissed', String(Date.now()))
+    setVisible(false)
+  }
+
+  const installAndroid = async () => {
+    if (!deferredPrompt) return
+    deferredPrompt.prompt()
+    await deferredPrompt.userChoice
+    setDeferredPrompt(null)
+    dismiss()
+  }
+
+  if (isStandalone || !visible) return null
+
+  // Android / Desktop Chrome — use native install prompt
+  if (deferredPrompt) {
+    return (
+      <div className="fixed bottom-20 left-3 right-3 z-40 animate-slide-up">
+        <div className="bg-bg-secondary border border-accent/30 rounded-2xl p-4 shadow-2xl flex items-center gap-3">
+          <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center text-xl flex-shrink-0">🏍️</div>
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-bold text-sm">Install MotoTrack</p>
+            <p className="text-gray-400 text-xs mt-0.5">Add to home screen for the best experience</p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button onClick={dismiss} className="text-gray-500 text-xs px-3 py-2 rounded-xl bg-white/5">Not now</button>
+            <button onClick={installAndroid} className="bg-accent text-white text-xs font-bold px-4 py-2 rounded-xl">Install</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // iOS Safari — manual instruction banner
+  if (isIOS) {
+    return (
+      <div className="fixed bottom-20 left-3 right-3 z-40 animate-slide-up">
+        <div className="bg-bg-secondary border border-white/15 rounded-2xl p-4 shadow-2xl">
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center text-base flex-shrink-0">🏍️</div>
+              <div>
+                <p className="text-white font-bold text-sm">Add to Home Screen</p>
+                <p className="text-gray-500 text-xs">Install MotoTrack for faster access</p>
+              </div>
+            </div>
+            <button onClick={dismiss} className="text-gray-500 text-lg leading-none ml-2">✕</button>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 bg-white/5 rounded-xl px-3 py-2">
+              <span className="text-lg flex-shrink-0">⬆️</span>
+              <p className="text-gray-300 text-xs">Tap the <strong className="text-white">Share</strong> button at the bottom of Safari</p>
+            </div>
+            <div className="flex items-center gap-3 bg-white/5 rounded-xl px-3 py-2">
+              <span className="text-lg flex-shrink-0">➕</span>
+              <p className="text-gray-300 text-xs">Tap <strong className="text-white">Add to Home Screen</strong> then <strong className="text-white">Add</strong></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return null
 }
 
 function ActiveRideBadge({ mode, onEnd }: { mode: RideMode; onEnd: () => void }) {
@@ -188,6 +285,9 @@ export default function App() {
 
       {/* Floating music player */}
       <MusicPlayer />
+
+      {/* Install / Add-to-Home-Screen prompt */}
+      <InstallBanner />
 
       {/* Global toast */}
       <Toast />

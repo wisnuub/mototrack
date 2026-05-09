@@ -599,6 +599,7 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
   const prevRideModeRef = useRef<RideMode>('idle')
   const [gpsState, setGpsState] = useState<'idle' | 'granted' | 'denied' | 'asking'>('asking')
   const [gpsErrorCode, setGpsErrorCode] = useState<number | null>(null)
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
   const [realPosition, setRealPosition] = useState<[number, number] | null>(null)
   const [mapTarget, setMapTarget] = useState<{ coords: [number, number]; name: string } | null>(null)
   const watchIdRef = useRef<number | null>(null)
@@ -628,6 +629,7 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
         setRealPosition(coords)
         setGpsState('granted')
         setGpsErrorCode(null)
+        setGpsAccuracy(Math.round(pos.coords.accuracy))
       },
       (err) => { setGpsState('denied'); setGpsErrorCode(err.code) },
       { enableHighAccuracy: true, timeout: 15000 }
@@ -981,13 +983,27 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
           )}
         </div>
 
-        {/* Track/center button */}
-        <button
-          className="absolute bottom-4 right-4 z-10 bg-accent text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg text-xl"
-          onClick={() => setTracking(!isTracking)}
-        >
-          {isTracking ? '📍' : '🧭'}
-        </button>
+        {/* GPS accuracy badge + track/center button */}
+        <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1.5">
+          {gpsState === 'granted' && gpsAccuracy !== null && (
+            <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold border ${
+              gpsAccuracy <= 20
+                ? 'bg-moto-green/20 border-moto-green/30 text-moto-green'
+                : gpsAccuracy <= 100
+                ? 'bg-accent-amber/20 border-accent-amber/30 text-accent-amber'
+                : 'bg-moto-red/20 border-moto-red/30 text-moto-red'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${gpsAccuracy <= 20 ? 'bg-moto-green' : gpsAccuracy <= 100 ? 'bg-accent-amber' : 'bg-moto-red'} animate-pulse`} />
+              {gpsAccuracy <= 20 ? '📱 Phone GPS' : gpsAccuracy <= 100 ? `±${gpsAccuracy}m` : `±${gpsAccuracy}m · weak`}
+            </div>
+          )}
+          <button
+            className="bg-accent text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg text-xl"
+            onClick={() => setTracking(!isTracking)}
+          >
+            {isTracking ? '📍' : '🧭'}
+          </button>
+        </div>
       </div>
 
       {/* Live stats — active ride */}
