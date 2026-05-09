@@ -5,6 +5,8 @@ import { ChevronLeft, Send, Mic, MicOff, Phone, PhoneOff, MapPin, Plus, X, Music
 import { dbGetProfilesByIds } from '../../lib/db'
 import { isSupabaseReady } from '../../lib/supabase'
 import { useVAD } from '../../hooks/useVAD'
+import { useRealtimeMessages } from '../../hooks/useRealtimeMessages'
+import { useRealtimeConversations } from '../../hooks/useRealtimeConversations'
 import { searchYouTube, fetchVideoInfo, fetchPlaylistTracks, parseYouTubeInput, YT_API_KEY } from '../../lib/youtube'
 
 // ─── Voice Channel Bar ────────────────────────────────────────────────────────
@@ -754,6 +756,9 @@ function MessageBubble({ msg, isMe }: { msg: ChatMessage; isMe: boolean }) {
 type ConvTab = 'chat' | 'music'
 
 function MessageView({ conv, onBack }: { conv: Conversation; onBack: () => void }) {
+  // Real-time subscription for this conversation
+  useRealtimeMessages(conv.id)
+
   const messages = useStore(s => s.messages.filter(m => m.conversationId === conv.id))
   const sendMessage = useStore(s => s.sendMessage)
   const voiceConvId = useStore(s => s.voiceConvId)
@@ -1257,6 +1262,9 @@ function PeopleSheet({ onClose }: { onClose: () => void }) {
 // ─── Main Chat Panel ──────────────────────────────────────────────────────────
 
 export default function ChatPanel() {
+  // Global real-time: new messages in background convs + new conv invites
+  useRealtimeConversations()
+
   const conversations = useStore(s => s.conversations)
   const activeConversationId = useStore(s => s.activeConversationId)
   const setActiveConversation = useStore(s => s.setActiveConversation)

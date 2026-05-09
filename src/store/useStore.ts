@@ -11,7 +11,7 @@ import {
   dbSignIn, dbSignUp, dbSignInWithGoogle, dbSignOut, dbGetProfile, dbUpdateProfile,
   dbGetBikes, dbInsertBike, dbGetMaintenance, dbInsertMaintenance, dbUpdateOdometer,
   dbGetModifications, dbInsertModification, dbDeleteModification,
-  dbGetConversations, dbGetMessages, dbSendMessage, dbMarkRead, dbToggleReaction,
+  dbGetConversations, dbGetMessages, dbSendMessage, dbMarkRead, dbToggleReaction, dbCreateConversation,
   dbUpsertRider, dbUpdateLocation, dbSetRiderOffline,
   dbGetActivityPosts, dbInsertActivityPost, dbDeleteActivityPost, dbTogglePostLike,
   dbGetRideSessions, dbInsertRideSession,
@@ -820,34 +820,52 @@ export const useStore = create<AppState>()(
       },
 
       createGroupConversation: (name, emoji, participantIds) => {
-        const id = `conv-${Date.now()}`
+        const tempId = `conv-${Date.now()}`
         const newConv: Conversation = {
-          id, type: 'group', name, emoji,
+          id: tempId, type: 'group', name, emoji,
           participantIds,
           unreadCount: 0, isPinned: false,
         }
         set(state => ({ conversations: [newConv, ...state.conversations] }))
-        return id
+        // Persist to Supabase; swap temp ID for real ID when done
+        if (isSupabaseReady) {
+          dbCreateConversation('group', name, emoji, participantIds).then(realId => {
+            set(state => ({
+              conversations: state.conversations.map(c =>
+                c.id === tempId ? { ...c, id: realId } : c
+              ),
+            }))
+          }).catch(console.warn)
+        }
+        return tempId
       },
 
       createDmConversation: (riderId, riderName, riderAvatar) => {
         const user = get().user
         const myId = user?.id ?? 'rider-1'
-        // Return existing DM if already exists
         const existing = get().conversations.find(
           c => c.type === 'dm' && c.participantIds.includes(riderId) && c.participantIds.includes(myId)
         )
         if (existing) return existing.id
-        const id = `conv-${Date.now()}`
+        const tempId = `conv-${Date.now()}`
         const newConv: Conversation = {
-          id, type: 'dm',
+          id: tempId, type: 'dm',
           name: riderName,
           emoji: riderAvatar,
           participantIds: [myId, riderId],
           unreadCount: 0, isPinned: false,
         }
         set(state => ({ conversations: [newConv, ...state.conversations] }))
-        return id
+        if (isSupabaseReady) {
+          dbCreateConversation('dm', riderName, riderAvatar, [myId, riderId]).then(realId => {
+            set(state => ({
+              conversations: state.conversations.map(c =>
+                c.id === tempId ? { ...c, id: realId } : c
+              ),
+            }))
+          }).catch(console.warn)
+        }
+        return tempId
       },
 
       // Voice channel

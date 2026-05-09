@@ -356,6 +356,25 @@ export async function dbSendMessage(
   return rowToMessage(data)
 }
 
+export async function dbCreateConversation(
+  type: 'group' | 'dm',
+  name: string,
+  emoji: string,
+  participantIds: string[]
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('conversations')
+    .insert({ type, name, emoji })
+    .select('id')
+    .single()
+  if (error) throw error
+  const convId: string = data.id
+  await supabase.from('conversation_participants').insert(
+    participantIds.map(uid => ({ conversation_id: convId, user_id: uid, unread_count: 0 }))
+  )
+  return convId
+}
+
 export async function dbMarkRead(conversationId: string, userId: string) {
   await supabase
     .from('conversation_participants')
