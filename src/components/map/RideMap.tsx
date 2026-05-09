@@ -36,23 +36,55 @@ function haversineMeters(a: [number, number], b: [number, number]): number {
 // Fix Leaflet default icon
 delete (L.Icon.Default.prototype as any)._getIconUrl
 
-function createRiderIcon(color: string, isYou: boolean, avatar = '🏍️') {
-  const size = isYou ? 48 : 36
-  // For emoji avatars render inside the circle; for "You" add pulsing ring + GPS dot
-  const svg = `
-    <svg width="${size}" height="${size}" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-      ${isYou ? `<circle cx="24" cy="24" r="23" fill="${color}28" stroke="${color}" stroke-width="2"/>` : ''}
-      <circle cx="24" cy="24" r="${isYou ? 17 : 14}" fill="${color}" />
-      <text x="24" y="29" text-anchor="middle" font-size="${isYou ? '15' : '12'}" fill="white">${avatar}</text>
-      ${isYou ? `<circle cx="35" cy="13" r="6" fill="#30d158" stroke="#0c0d13" stroke-width="1.5"/>` : ''}
-    </svg>
-  `
+function createRiderIcon(color: string, isYou: boolean, avatar = '🏍️', uid = 'r') {
+  const W = isYou ? 64 : 52
+  const R = isYou ? 23 : 19          // inner photo/avatar circle radius
+  const BORDER = isYou ? 3.5 : 3     // white border ring width
+  const rOuter = R + BORDER
+  const CX = W / 2
+  const CY = 6 + rOuter              // circle center, with top padding for shadow
+  const triHW = 7                    // triangle half-width at base
+  const triBase = CY + rOuter - 4    // triangle base y, overlaps circle to avoid gap
+  const tipY = CY + rOuter + 12      // tip of the teardrop point
+  const H = tipY + 5
+
+  const isPhoto = avatar.startsWith('http') || avatar.startsWith('data:')
+  const borderColor = isYou ? '#ff6b35' : '#ffffff'
+  const shadowId = `rs${uid}`
+  const clipId = `rc${uid}`
+
+  // Avatar content: photo (clipped image) or emoji (text)
+  const avatarContent = isPhoto
+    ? `<image href="${avatar}" x="${CX - R}" y="${CY - R}" width="${R * 2}" height="${R * 2}" clip-path="url(#${clipId})" preserveAspectRatio="xMidYMid slice"/>`
+    : `<text x="${CX}" y="${CY + R * 0.38}" text-anchor="middle" font-size="${Math.round(R * 1.05)}">${avatar}</text>`
+
+  // Green GPS dot for "you" (top-right of circle)
+  const gpsDot = isYou
+    ? `<circle cx="${CX + R - 2}" cy="${CY - R + 5}" r="6.5" fill="#30d158" stroke="white" stroke-width="2"/>`
+    : ''
+
+  const svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
+  <defs>
+    <filter id="${shadowId}" x="-40%" y="-20%" width="180%" height="160%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3.5" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <clipPath id="${clipId}"><circle cx="${CX}" cy="${CY}" r="${R}"/></clipPath>
+  </defs>
+  <!-- Teardrop border: outer circle + triangle -->
+  <circle cx="${CX}" cy="${CY}" r="${rOuter}" fill="${borderColor}" filter="url(#${shadowId})"/>
+  <polygon points="${CX - triHW},${triBase} ${CX + triHW},${triBase} ${CX},${tipY}" fill="${borderColor}" filter="url(#${shadowId})"/>
+  <!-- White inner fill -->
+  <circle cx="${CX}" cy="${CY}" r="${R}" fill="white"/>
+  ${avatarContent}
+  ${gpsDot}
+</svg>`
+
   return L.divIcon({
     html: svg,
     className: '',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-    popupAnchor: [0, -size / 2],
+    iconSize: [W, H],
+    iconAnchor: [CX, tipY + 3],
+    popupAnchor: [0, -(tipY + 3)],
   })
 }
 
@@ -720,28 +752,13 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
             attribution='&copy; <a href="https://carto.com/">CARTO</a>'
           />
 
-          {/* Route polyline */}
-          {routePositions.length > 0 && (
+          {/* Route polyline — only during active ride */}
+          {rideMode !== 'idle' && routePositions.length > 0 && (
             <>
-              {/* Shadow */}
-              <Polyline
-                positions={routePositions}
-                pathOptions={{ color: '#000', weight: 6, opacity: 0.3 }}
-              />
-              {/* Main route */}
-              <Polyline
-                positions={routePositions}
-                pathOptions={{ color: '#ff6b35', weight: 4, opacity: 0.9, dashArray: '0' }}
-              />
+              <Polyline positions={routePositions} pathOptions={{ color: '#000', weight: 6, opacity: 0.25 }} />
+              <Polyline positions={routePositions} pathOptions={{ color: '#ff6b35', weight: 4, opacity: 0.9 }} />
+              <Polyline positions={routePositions.slice(0, 3)} pathOptions={{ color: '#ffffff', weight: 3, opacity: 0.35, dashArray: '8 8' }} />
             </>
-          )}
-
-          {/* Ridden portion (dashed for traveled) */}
-          {routePositions.length > 0 && (
-            <Polyline
-              positions={routePositions.slice(0, 3)}
-              pathOptions={{ color: '#ffffff', weight: 3, opacity: 0.4, dashArray: '8 8' }}
-            />
           )}
 
           {/* Rider markers — other riders from store */}
@@ -749,7 +766,7 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
             <Marker
               key={rider.id}
               position={[rider.position.lat, rider.position.lng]}
-              icon={createRiderIcon(rider.color, false, rider.avatar)}
+              icon={createRiderIcon(rider.color, false, rider.avatar, rider.id)}
             >
               <Popup className="moto-popup">
                 <div className="bg-bg-card rounded-xl p-3 min-w-[160px]">
@@ -764,7 +781,7 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
           {(realPosition || me) && (
             <Marker
               position={realPosition ?? [me!.position.lat, me!.position.lng]}
-              icon={createRiderIcon('#ff6b35', true, myAvatar)}
+              icon={createRiderIcon('#ff6b35', true, myAvatar, 'me')}
             >
               <Popup className="moto-popup">
                 <div className="bg-bg-card rounded-xl p-3 min-w-[160px]">
