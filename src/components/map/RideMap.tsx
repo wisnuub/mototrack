@@ -119,8 +119,10 @@ export default function RideMap() {
   }
 
   const activeGroup = groups.find(g => g.id === activeGroupId)
-  const me = riders.find(r => r.id === 'rider-1')!
-  const center: [number, number] = [me.position.lat, me.position.lng]
+  const me = riders.find(r => r.id === 'rider-1')
+  const center: [number, number] = me
+    ? [me.position.lat, me.position.lng]
+    : BALI_CENTER
 
   const distanceTraveled = 14.2 // km simulated
   const avgSpeed = 58 // km/h simulated
@@ -144,7 +146,7 @@ export default function RideMap() {
     p => [p.lat, p.lng] as [number, number]
   )
 
-  const riderPositions = riders.map(r => [r.position.lat, r.position.lng] as [number, number])
+  const riderPositions = riders.filter(r => r.position).map(r => [r.position.lat, r.position.lng] as [number, number])
 
   return (
     <div className="relative h-full flex flex-col">
@@ -187,7 +189,7 @@ export default function RideMap() {
           )}
 
           {/* Rider markers */}
-          {riders.map(rider => (
+          {riders.filter(r => r.position).map(rider => (
             <Marker
               key={rider.id}
               position={[rider.position.lat, rider.position.lng]}

@@ -110,6 +110,8 @@ export default function App() {
             badges: (profile?.badges ?? adminProfile.badges) as BadgeType[],
             ...(adminProfile.isAdmin ? { isAdmin: true } : {}),
           },
+          // If they have a saved profile name, they completed onboarding — restore on any device
+          ...(profile?.name ? { setupCompletedForUserId: sbUser.id } : {}),
         })
         await loadUserData(sbUser.id)
       }
