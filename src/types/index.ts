@@ -207,7 +207,10 @@ export interface Attraction {
 
 // ─── Activity / Posts ──────────────────────────────────────────
 export type ActivityType = 'post' | 'service' | 'ride' | 'story'
-export type BadgeType = 'dev' | 'influencer' | 'founder' | 'verified'
+export type BadgeType =
+  | 'dev' | 'influencer' | 'founder' | 'verified'
+  | 'yamaha' | 'honda' | 'kawasaki' | 'suzuki' | 'ktm'
+  | 'bmw' | 'ducati' | 'triumph' | 'brand'
 
 export interface ActivityPost {
   id: string
@@ -227,6 +230,82 @@ export interface ActivityPost {
   location?: string
   likes: number
   likedBy: string[]
+}
+
+// ─── Events ────────────────────────────────────────────────────
+export type EventCategory = 'track_day' | 'kopdar' | 'touring' | 'competition' | 'workshop' | 'launch' | 'community'
+export type TicketType = 'free' | 'paid'
+
+export interface MotoEvent {
+  id: string
+  organizerName: string
+  organizerAvatar: string
+  organizerBadges: BadgeType[]
+  isVerifiedOrganizer: boolean
+  category: EventCategory
+  title: string
+  description: string
+  highlights?: string[]
+  coverEmoji: string
+  date: Date
+  endDate?: Date
+  location: string
+  locationUrl?: string
+  ticketType: TicketType
+  ticketPrice?: number        // IDR
+  ticketUrl?: string
+  whatsappNumber?: string
+  interestedCount: number
+  attendingCount: number
+  maxCapacity?: number
+  isNonRefundable: boolean
+  tags: string[]
+}
+
+// ─── Shop Products ──────────────────────────────────────────────
+export type ProductCategory = 'oil' | 'chain_lube' | 'accessories' | 'apparel' | 'parts' | 'tires' | 'gear'
+
+export interface ShopProduct {
+  id: string
+  sellerName: string
+  sellerAvatar: string
+  sellerBadges: BadgeType[]
+  isOfficialStore: boolean
+  category: ProductCategory
+  name: string
+  description: string
+  imageEmoji?: string
+  imageUrl?: string
+  priceIDR: number
+  originalPriceIDR?: number
+  rating: number
+  reviewCount: number
+  soldCount: number
+  buyUrl?: string             // Tokopedia/Shopee
+  whatsappNumber?: string
+  inStock: boolean
+  tags: string[]
+  isNew?: boolean
+  isFeatured?: boolean
+}
+
+// ─── Community Mods (aggregated popularity) ────────────────────
+export interface CommunityMod {
+  id: string
+  category: string
+  name: string
+  brand: string
+  riderCount: number
+  avgRating: number
+  imageEmoji: string
+  priceRange: string          // e.g. "Rp 800K – 1.2Jt"
+  buyUrl?: string
+}
+
+// ─── Event interaction (local state) ───────────────────────────
+export interface EventInteraction {
+  eventId: string
+  type: 'interested' | 'attending'
 }
 
 // ─── Ride Sessions ─────────────────────────────────────────────

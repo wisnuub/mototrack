@@ -254,3 +254,109 @@ create policy "Users manage own reactions" on message_reactions for all using (a
 create policy "Users read own rides" on ride_history for select using (auth.uid() = user_id or is_public = true);
 create policy "Users insert rides" on ride_history for insert with check (auth.uid() = user_id);
 create policy "Users update own rides" on ride_history for update using (auth.uid() = user_id);
+
+-- ─── Events ────────────────────────────────────────────────────────────────────
+create table if not exists events (
+  id                   text primary key default gen_random_uuid()::text,
+  organizer_id         uuid references profiles(id),
+  organizer_name       text not null,
+  organizer_avatar     text default '🏁',
+  organizer_badges     text[] default '{}',
+  is_verified_org      boolean default false,
+  category             text not null default 'community',
+  title                text not null,
+  description          text default '',
+  cover_emoji          text default '🎫',
+  event_date           timestamptz not null,
+  end_date             timestamptz,
+  location             text not null,
+  location_url         text,
+  ticket_type          text default 'free',
+  ticket_price         int,
+  ticket_url           text,
+  whatsapp_number      text,
+  interested_count     int default 0,
+  attending_count      int default 0,
+  max_capacity         int,
+  is_non_refundable    boolean default false,
+  tags                 text[] default '{}',
+  created_at           timestamptz default now()
+);
+
+create table if not exists event_interactions (
+  id         text primary key default gen_random_uuid()::text,
+  event_id   text references events(id) on delete cascade,
+  user_id    uuid references profiles(id) on delete cascade,
+  type       text not null,
+  created_at timestamptz default now(),
+  unique(event_id, user_id, type)
+);
+
+-- ─── Shop Products ──────────────────────────────────────────────────────────────
+create table if not exists products (
+  id                   text primary key default gen_random_uuid()::text,
+  seller_id            uuid references profiles(id),
+  seller_name          text not null,
+  seller_avatar        text default '🛒',
+  seller_badges        text[] default '{}',
+  is_official_store    boolean default false,
+  category             text not null,
+  name                 text not null,
+  description          text default '',
+  image_emoji          text,
+  price_idr            int not null,
+  original_price_idr   int,
+  rating               numeric(3,2) default 0,
+  review_count         int default 0,
+  sold_count           int default 0,
+  buy_url              text,
+  whatsapp_number      text,
+  in_stock             boolean default true,
+  tags                 text[] default '{}',
+  is_new               boolean default false,
+  is_featured          boolean default false,
+  created_at           timestamptz default now()
+);
+
+-- RLS
+alter table events enable row level security;
+alter table event_interactions enable row level security;
+alter table products enable row level security;
+
+create policy "Anyone reads events"  on events for select using (true);
+create policy "Org inserts events"   on events for insert with check (auth.uid() = organizer_id);
+create policy "Org updates events"   on events for update using (auth.uid() = organizer_id);
+create policy "Org deletes events"   on events for delete using (auth.uid() = organizer_id);
+
+create policy "Anyone reads products"   on products for select using (true);
+create policy "Seller inserts products" on products for insert with check (auth.uid() = seller_id);
+create policy "Seller updates products" on products for update using (auth.uid() = seller_id);
+create policy "Seller deletes products" on products for delete using (auth.uid() = seller_id);
+
+create policy "Users read own interactions"   on event_interactions for select using (auth.uid() = user_id);
+create policy "Users insert interactions"     on event_interactions for insert with check (auth.uid() = user_id);
+create policy "Users delete interactions"     on event_interactions for delete using (auth.uid() = user_id);
+
+-- Trigger: auto-increment counts when interactions are inserted/deleted
+create or replace function update_event_counts() returns trigger as $$
+begin
+  if TG_OP = 'INSERT' then
+    if NEW.type = 'interested' then
+      update events set interested_count = interested_count + 1 where id = NEW.event_id;
+    elsif NEW.type = 'attending' then
+      update events set attending_count = attending_count + 1 where id = NEW.event_id;
+    end if;
+  elsif TG_OP = 'DELETE' then
+    if OLD.type = 'interested' then
+      update events set interested_count = greatest(0, interested_count - 1) where id = OLD.event_id;
+    elsif OLD.type = 'attending' then
+      update events set attending_count = greatest(0, attending_count - 1) where id = OLD.event_id;
+    end if;
+  end if;
+  return coalesce(NEW, OLD);
+end;
+$$ language plpgsql security definer;
+
+create trigger on_event_interaction_change
+  after insert or delete on event_interactions
+  for each row execute function update_event_counts();

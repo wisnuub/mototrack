@@ -16,6 +16,15 @@ const BADGE_META: Record<BadgeType, { label: string; color: string; bg: string; 
   influencer: { label: 'Influencer', color: 'text-pink-400',   bg: 'bg-pink-400/15',   icon: '⭐' },
   founder:    { label: 'Founder',    color: 'text-accent',     bg: 'bg-accent/15',     icon: '🔥' },
   verified:   { label: 'Verified',   color: 'text-green-400',  bg: 'bg-green-400/15',  icon: '✓' },
+  yamaha:     { label: 'Yamaha',     color: 'text-blue-400',   bg: 'bg-blue-400/15',   icon: '🔵' },
+  honda:      { label: 'Honda',      color: 'text-red-400',    bg: 'bg-red-400/15',    icon: '🔴' },
+  kawasaki:   { label: 'Kawasaki',   color: 'text-green-400',  bg: 'bg-green-400/15',  icon: '🟢' },
+  suzuki:     { label: 'Suzuki',     color: 'text-orange-400', bg: 'bg-orange-400/15', icon: '🟠' },
+  ktm:        { label: 'KTM',        color: 'text-accent',     bg: 'bg-accent/15',     icon: '🏁' },
+  bmw:        { label: 'BMW',        color: 'text-blue-400',   bg: 'bg-blue-400/15',   icon: '🔷' },
+  ducati:     { label: 'Ducati',     color: 'text-red-400',    bg: 'bg-red-400/15',    icon: '🏍️' },
+  triumph:    { label: 'Triumph',    color: 'text-yellow-400', bg: 'bg-yellow-400/15', icon: '✨' },
+  brand:      { label: 'Brand',      color: 'text-purple-400', bg: 'bg-purple-400/15', icon: '🏷️' },
 }
 
 export function BadgeChip({ badge }: { badge: BadgeType }) {

@@ -103,9 +103,22 @@ export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: R
   const [startTime] = useState<number>(Date.now() - 12 * 60 * 1000)
   const [gpsState, setGpsState] = useState<'idle' | 'granted' | 'denied' | 'asking'>('asking')
   const [realPosition, setRealPosition] = useState<[number, number] | null>(null)
+  const [mapTarget, setMapTarget] = useState<{ coords: [number, number]; name: string } | null>(null)
   const watchIdRef = useRef<number | null>(null)
 
   useRideSimulation(true)
+
+  // Pick up "show on map" requests from ExplorePanel
+  useEffect(() => {
+    const raw = localStorage.getItem('mototrack-map-target')
+    if (raw) {
+      try {
+        const t = JSON.parse(raw)
+        setMapTarget({ coords: [t.lat, t.lng], name: t.name })
+        localStorage.removeItem('mototrack-map-target')
+      } catch {}
+    }
+  }, [])
 
   // Auto-request GPS on mount — mandatory for map use
   useEffect(() => {
@@ -227,7 +240,26 @@ export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: R
             </Marker>
           )}
 
-          <RecenterMap center={isTracking ? center : BALI_CENTER} />
+          {/* Destination pin from Explore */}
+          {mapTarget && (
+            <Marker position={mapTarget.coords} icon={createDestinationIcon()}>
+              <Popup>
+                <div className="bg-bg-card rounded-xl p-3">
+                  <p className="text-white font-semibold text-sm">{mapTarget.name}</p>
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${mapTarget.coords[0]},${mapTarget.coords[1]}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent text-xs mt-1 block"
+                  >
+                    Open in Google Maps →
+                  </a>
+                </div>
+              </Popup>
+            </Marker>
+          )}
+
+          <RecenterMap center={mapTarget ? mapTarget.coords : (isTracking ? center : BALI_CENTER)} />
         </MapContainer>
 
         {/* Top overlay - group + destination */}
@@ -248,6 +280,19 @@ export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: R
             </div>
           </div>
         </div>
+
+        {/* Destination banner */}
+        {mapTarget && (
+          <div className="absolute top-3 left-3 right-3 z-10 pointer-events-none">
+            <div className="bg-bg-primary/90 backdrop-blur-md rounded-2xl px-4 py-2.5 border border-accent/30 flex items-center justify-between pointer-events-auto">
+              <div>
+                <p className="text-accent text-xs font-semibold">Navigating to</p>
+                <p className="text-white font-bold text-sm">{mapTarget.name}</p>
+              </div>
+              <button onClick={() => setMapTarget(null)} className="text-gray-400 text-lg leading-none ml-3">✕</button>
+            </div>
+          </div>
+        )}
 
         {/* GPS status badges */}
         {gpsState === 'asking' && (

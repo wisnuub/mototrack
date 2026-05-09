@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Rider, Group, Bike, MaintenanceRecord, WeatherData, TabId, TripTemplate, ChatMessage, Conversation, VoiceChannelParticipant, MusicTrack, BikeModification, ModCategory, ActivityPost, ActivityType, BadgeType, RideSession, RideWaypoint } from '../types'
+import type { Rider, Group, Bike, MaintenanceRecord, WeatherData, TabId, TripTemplate, ChatMessage, Conversation, VoiceChannelParticipant, MusicTrack, BikeModification, ModCategory, ActivityPost, ActivityType, BadgeType, RideSession, RideWaypoint, MotoEvent, ShopProduct, EventInteraction } from '../types'
 import {
   MOCK_RIDERS, MOCK_GROUPS, MOCK_BIKES, MOCK_MAINTENANCE, MOCK_TRIP_TEMPLATES,
-  MOCK_CONVERSATIONS, MOCK_MESSAGES,
+  MOCK_CONVERSATIONS, MOCK_MESSAGES, MOCK_EVENTS, MOCK_PRODUCTS,
 } from '../data/mockData'
 import { isSupabaseReady } from '../lib/supabase'
 import {
@@ -90,6 +90,13 @@ interface AppState {
   likeTrip: (tripId: string) => void
   saveTrip: (tripId: string) => void
   savedTripIds: string[]
+
+  // Events & Shop
+  events: MotoEvent[]
+  products: ShopProduct[]
+  eventInteractions: EventInteraction[]
+  toggleEventInterest: (eventId: string) => void
+  markEventAttending: (eventId: string) => void
 
   // Weather
   weather: WeatherData | null
@@ -570,6 +577,40 @@ export const useStore = create<AppState>()(
       // Explore
       tripTemplates: MOCK_TRIP_TEMPLATES,
       savedTripIds: [],
+
+      // Events & Shop
+      events: MOCK_EVENTS,
+      products: MOCK_PRODUCTS,
+      eventInteractions: [],
+
+      toggleEventInterest: (eventId) => {
+        set(state => {
+          const existing = state.eventInteractions.find(i => i.eventId === eventId && i.type === 'interested')
+          const isAdding = !existing
+          return {
+            eventInteractions: existing
+              ? state.eventInteractions.filter(i => !(i.eventId === eventId && i.type === 'interested'))
+              : [...state.eventInteractions, { eventId, type: 'interested' }],
+            events: state.events.map(e =>
+              e.id === eventId ? { ...e, interestedCount: e.interestedCount + (isAdding ? 1 : -1) } : e
+            ),
+          }
+        })
+      },
+
+      markEventAttending: (eventId) => {
+        set(state => {
+          const already = state.eventInteractions.find(i => i.eventId === eventId && i.type === 'attending')
+          if (already) return state
+          return {
+            eventInteractions: [...state.eventInteractions, { eventId, type: 'attending' }],
+            events: state.events.map(e =>
+              e.id === eventId ? { ...e, attendingCount: e.attendingCount + 1 } : e
+            ),
+          }
+        })
+      },
+
       likeTrip: (tripId) => {
         set(state => ({
           tripTemplates: state.tripTemplates.map(t =>
@@ -847,6 +888,7 @@ export const useStore = create<AppState>()(
         activeBikeId: state.activeBikeId,
         activeGroupId: state.activeGroupId,
         setupCompletedForUserId: state.setupCompletedForUserId,
+        eventInteractions: state.eventInteractions,
       }),
     }
   )
