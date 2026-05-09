@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage'
 import EventsPage from './pages/EventsPage'
 import ProductsPage from './pages/ProductsPage'
 import TicketsPage from './pages/TicketsPage'
+import InstagramPage from './pages/InstagramPage'
 import Layout from './components/Layout'
 
 export default function App() {
@@ -33,10 +34,11 @@ export default function App() {
     <Layout session={session}>
       <Routes>
         <Route path="/"          element={<Navigate to="/dashboard" />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/events"    element={<EventsPage />} />
-        <Route path="/products"  element={<ProductsPage />} />
-        <Route path="/tickets"   element={<TicketsPage />} />
+        <Route path="/dashboard"  element={<DashboardPage />} />
+        <Route path="/events"     element={<EventsPage />} />
+        <Route path="/products"   element={<ProductsPage />} />
+        <Route path="/tickets"    element={<TicketsPage />} />
+        <Route path="/instagram"  element={<InstagramPage />} />
       </Routes>
     </Layout>
   )

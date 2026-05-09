@@ -2,10 +2,11 @@ import { NavLink } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 const NAV = [
-  { to: '/dashboard', label: 'Dashboard',  icon: '📊' },
-  { to: '/events',    label: 'Events',      icon: '🎫' },
-  { to: '/products',  label: 'Products',    icon: '🛒' },
-  { to: '/tickets',   label: 'Ticket Sales',icon: '🎟️' },
+  { to: '/dashboard',  label: 'Dashboard',  icon: '📊' },
+  { to: '/events',     label: 'Events',     icon: '🎫' },
+  { to: '/products',   label: 'Products',   icon: '🛒' },
+  { to: '/tickets',    label: 'Ticket Sales', icon: '🎟️' },
+  { to: '/instagram',  label: 'Instagram',  icon: '📸' },
 ]
 
 export default function Layout({ children, session }: { children: React.ReactNode; session: any }) {

@@ -210,6 +210,7 @@ export default function AddBikeModal({ onClose }: AddBikeModalProps) {
 
   // Step 2 — model
   const [model, setModel] = useState<ModelInfo | null>(null)
+  const [modelSearch, setModelSearch] = useState('')
   const [year, setYear] = useState<number>(new Date().getFullYear())
   const [plateNumber, setPlateNumber] = useState('')
   const [odometer, setOdometer] = useState('0')
@@ -365,7 +366,7 @@ export default function AddBikeModal({ onClose }: AddBikeModalProps) {
               {BIKE_BRANDS.map(b => (
                 <button
                   key={b.name}
-                  onClick={() => { setBrand(b); setModel(null) }}
+                  onClick={() => { setBrand(b); setModel(null); setModelSearch('') }}
                   className={`flex items-center gap-3 p-3.5 rounded-2xl border text-left transition-all ${
                     brand?.name === b.name
                       ? 'border-accent bg-accent/10'
@@ -397,8 +398,23 @@ export default function AddBikeModal({ onClose }: AddBikeModalProps) {
                 </div>
               </div>
 
+              {/* Model search */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={modelSearch}
+                  onChange={e => setModelSearch(e.target.value)}
+                  placeholder="Search model…"
+                  className="w-full bg-bg-card border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-accent/50"
+                  autoFocus
+                />
+                {modelSearch && (
+                  <button onClick={() => setModelSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">✕</button>
+                )}
+              </div>
+
               <div className="space-y-2">
-                {brand.models.map(m => (
+                {brand.models.filter(m => m.name.toLowerCase().includes(modelSearch.toLowerCase())).map(m => (
                   <button
                     key={m.name}
                     onClick={() => { setModel(m); setColor(m.color); setYear(m.yearTo) }}

@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react'
 import { useStore } from '../../store/useStore'
 import { Heart, Bookmark, MapPin, Clock, Zap, Users, Eye, EyeOff, Star, ChevronRight, ExternalLink, Ticket, ShoppingBag, X } from 'lucide-react'
-import type { TripTemplate, Attraction, MotoEvent, ShopProduct, CommunityMod, BadgeType } from '../../types'
+import type { TripTemplate, Attraction, MotoEvent, ShopProduct, CommunityMod, BadgeType, InstagramPost, InstagramAccount } from '../../types'
 import { MOCK_ATTRACTIONS, MOCK_COMMUNITY_MODS } from '../../data/mockData'
+import EventsMapPanel from './EventsMapPanel'
 import { formatDistanceToNow, format } from 'date-fns'
 
 // ─── Ride History ──────────────────────────────────────────────────────────────
@@ -13,7 +14,7 @@ const RIDE_HISTORY = [
   { id: 'rh3', title: 'Tanah Lot Sunset Group Run', date: new Date('2024-04-03T15:00:00'), distanceKm: 38.9, durationMin: 95, avgSpeedKmh: 52, maxSpeedKmh: 78, weather: 'Sunny, 31°C', traffic: 'Moderate', riders: ['Sato', 'Wayan'], isPrivate: false, route: 'Denpasar → Tabanan → Tanah Lot', emoji: '🌅' },
 ]
 
-type ExploreTab = 'discover' | 'events' | 'shop' | 'routes' | 'feed'
+type ExploreTab = 'discover' | 'events' | 'shop' | 'routes' | 'feed' | 'brands'
 
 // ─── Brand badge config ──────────────────────────────────────────────────────
 
@@ -690,19 +691,152 @@ function AttractionCard({ attraction, onOpen }: { attraction: Attraction; onOpen
   )
 }
 
+// ─── Instagram Brand Bubble ───────────────────────────────────────────────────
+
+function BrandBubble({ account, isActive, onToggle }: {
+  account: InstagramAccount
+  isActive: boolean
+  onToggle: () => void
+}) {
+  const cfg = BADGE_CONFIG[account.badge]
+  return (
+    <button
+      onClick={onToggle}
+      className="flex flex-col items-center gap-1 flex-shrink-0 group"
+    >
+      <div className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl transition-all ${
+        isActive
+          ? 'ring-2 ring-offset-2 ring-offset-bg-primary scale-105'
+          : 'ring-1 ring-white/10'
+      }`}
+        style={isActive ? { boxShadow: `0 0 0 2px ${cfg?.color ?? '#ff6b35'}` } : undefined}
+      >
+        <span className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl ${
+          isActive ? 'bg-bg-card' : 'bg-bg-surface'
+        }`}>
+          {account.avatarEmoji}
+        </span>
+      </div>
+      <span className={`text-[10px] font-medium max-w-[56px] truncate ${isActive ? 'text-white' : 'text-gray-500'}`}>
+        @{account.username.replace('_', '')}
+      </span>
+    </button>
+  )
+}
+
+// ─── Instagram Post Card ──────────────────────────────────────────────────────
+
+const IG_MEDIA_GRADIENTS: Record<string, string> = {
+  yamaha:   'from-blue-900/60 to-gray-900',
+  honda:    'from-red-900/60 to-gray-900',
+  kawasaki: 'from-green-900/60 to-gray-900',
+  ktm:      'from-orange-900/60 to-gray-900',
+  verified: 'from-gray-800/80 to-gray-900',
+}
+
+function IgPostCard({ post }: { post: InstagramPost }) {
+  const [expanded, setExpanded] = useState(false)
+  const cfg = BADGE_CONFIG[post.badge]
+  const grad = IG_MEDIA_GRADIENTS[post.badge] ?? 'from-gray-800 to-gray-900'
+  const timeAgo = formatDistanceToNow(post.timestamp, { addSuffix: true })
+  const isLong = (post.caption?.length ?? 0) > 120
+
+  return (
+    <div className="bg-bg-card rounded-2xl overflow-hidden border border-white/5">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 pt-3 pb-2">
+        <div className="w-10 h-10 rounded-full bg-bg-surface flex items-center justify-center text-xl flex-shrink-0 ring-1 ring-white/10">
+          {post.avatarEmoji}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-white font-bold text-sm">{post.displayName}</span>
+            {cfg && (
+              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                style={{ color: cfg.color, backgroundColor: cfg.bg, border: `1px solid ${cfg.color}40` }}>
+                {cfg.label}
+              </span>
+            )}
+          </div>
+          <p className="text-gray-500 text-[10px]">@{post.username} · {timeAgo}</p>
+        </div>
+        {/* Media type badge */}
+        {post.mediaType === 'CAROUSEL_ALBUM' && (
+          <span className="text-[9px] text-gray-500 bg-bg-surface rounded-md px-1.5 py-0.5 flex-shrink-0">📷 Album</span>
+        )}
+        {post.mediaType === 'VIDEO' && (
+          <span className="text-[9px] text-gray-500 bg-bg-surface rounded-md px-1.5 py-0.5 flex-shrink-0">▶ Video</span>
+        )}
+      </div>
+
+      {/* Media area */}
+      {post.mediaUrl ? (
+        <img src={post.mediaUrl} alt={post.caption} className="w-full aspect-square object-cover" />
+      ) : (
+        <div className={`w-full aspect-square bg-gradient-to-b ${grad} flex items-center justify-center`}>
+          <span className="text-8xl opacity-60 select-none">{post.mediaEmoji}</span>
+        </div>
+      )}
+
+      {/* Caption */}
+      {post.caption && (
+        <div className="px-4 pt-2.5 pb-1">
+          <p className={`text-gray-300 text-sm leading-relaxed ${!expanded && isLong ? 'line-clamp-3' : ''}`}>
+            {post.caption}
+          </p>
+          {isLong && (
+            <button onClick={() => setExpanded(e => !e)} className="text-accent text-xs font-semibold mt-0.5">
+              {expanded ? 'less' : 'more'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Engagement row */}
+      <div className="flex items-center justify-between px-4 pt-2 pb-3">
+        <div className="flex items-center gap-4 text-gray-500 text-xs">
+          {post.likeCount !== undefined && (
+            <span className="flex items-center gap-1">
+              <span>❤️</span>
+              <span>{post.likeCount.toLocaleString('en-US')}</span>
+            </span>
+          )}
+          {post.commentCount !== undefined && (
+            <span className="flex items-center gap-1">
+              <span>💬</span>
+              <span>{post.commentCount.toLocaleString('en-US')}</span>
+            </span>
+          )}
+        </div>
+        <a
+          href={post.permalink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-accent text-xs font-semibold"
+        >
+          View on Instagram <ExternalLink size={10} />
+        </a>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main ExplorePanel ────────────────────────────────────────────────────────
 
 export default function ExplorePanel() {
   const [tab, setTab]                   = useState<ExploreTab>('discover')
   const [selectedEvent, setSelectedEvent] = useState<MotoEvent | null>(null)
   const [selectedAttraction, setSelectedAttraction] = useState<Attraction | null>(null)
-  const tripTemplates = useStore(s => s.tripTemplates)
-  const savedTripIds  = useStore(s => s.savedTripIds)
-  const likeTrip      = useStore(s => s.likeTrip)
-  const saveTrip      = useStore(s => s.saveTrip)
-  const events        = useStore(s => s.events)
-  const products      = useStore(s => s.products)
-  const setActiveTab  = useStore(s => s.setActiveTab)
+  const [igFilter, setIgFilter]         = useState<string | null>(null)
+  const tripTemplates       = useStore(s => s.tripTemplates)
+  const savedTripIds        = useStore(s => s.savedTripIds)
+  const likeTrip            = useStore(s => s.likeTrip)
+  const saveTrip            = useStore(s => s.saveTrip)
+  const events              = useStore(s => s.events)
+  const products            = useStore(s => s.products)
+  const setActiveTab        = useStore(s => s.setActiveTab)
+  const instagramAccounts   = useStore(s => s.instagramAccounts)
+  const instagramPosts      = useStore(s => s.instagramPosts)
 
   const handleShowOnMap = (attraction: Attraction) => {
     // Store the target in localStorage so RideMap can pick it up (simple cross-component comms)
@@ -715,12 +849,16 @@ export default function ExplorePanel() {
     { id: 'events',   label: 'Events',   icon: '🎫' },
     { id: 'shop',     label: 'Shop',     icon: '🛒' },
     { id: 'routes',   label: 'Routes',   icon: '🗺️' },
+    { id: 'brands',   label: 'Brands',   icon: '📸' },
     { id: 'feed',     label: 'My Rides', icon: '📊' },
   ]
 
-  const topAttractions = [...MOCK_ATTRACTIONS].sort((a, b) => b.rating - a.rating).slice(0, 6)
-  const upcomingEvents = events.filter(e => e.date > new Date()).sort((a, b) => a.date.getTime() - b.date.getTime())
-  const featuredProducts = [...products].sort((a, b) => (b.isFeatured ? 1 : 0) - (a.isFeatured ? 1 : 0))
+  const topAttractions    = [...MOCK_ATTRACTIONS].sort((a, b) => b.rating - a.rating).slice(0, 6)
+  const upcomingEvents    = events.filter(e => e.date > new Date()).sort((a, b) => a.date.getTime() - b.date.getTime())
+  const featuredProducts  = [...products].sort((a, b) => (b.isFeatured ? 1 : 0) - (a.isFeatured ? 1 : 0))
+  const filteredIgPosts   = igFilter
+    ? instagramPosts.filter(p => p.accountId === igFilter).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+    : [...instagramPosts].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
 
   return (
     <div className="flex flex-col h-full">
@@ -803,6 +941,12 @@ export default function ExplorePanel() {
         {tab === 'events' && (
           <div className="space-y-3">
             <p className="text-gray-500 text-xs">Upcoming events & community gatherings</p>
+
+            {/* Map showing event pins */}
+            {upcomingEvents.length > 0 && (
+              <EventsMapPanel events={upcomingEvents} onEventOpen={(e) => setSelectedEvent(e)} />
+            )}
+
             {upcomingEvents.map(e => (
               <EventCard key={e.id} event={e} onOpen={() => setSelectedEvent(e)} />
             ))}
@@ -845,6 +989,71 @@ export default function ExplorePanel() {
               </div>
             </div>
           </>
+        )}
+
+        {/* ── BRANDS TAB ── */}
+        {tab === 'brands' && (
+          <div>
+            {/* Brand bubbles — YouTube Subscriptions style */}
+            <div className="flex gap-4 overflow-x-auto no-scrollbar pb-3 -mx-4 px-4">
+              {/* All */}
+              <button
+                onClick={() => setIgFilter(null)}
+                className="flex flex-col items-center gap-1 flex-shrink-0"
+              >
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl transition-all ${
+                  igFilter === null
+                    ? 'bg-accent/20 ring-2 ring-accent scale-105'
+                    : 'bg-bg-surface ring-1 ring-white/10'
+                }`}>
+                  <span>✨</span>
+                </div>
+                <span className={`text-[10px] font-medium ${igFilter === null ? 'text-white' : 'text-gray-500'}`}>All</span>
+              </button>
+
+              {instagramAccounts.map(acc => (
+                <BrandBubble
+                  key={acc.id}
+                  account={acc}
+                  isActive={igFilter === acc.id}
+                  onToggle={() => setIgFilter(prev => prev === acc.id ? null : acc.id)}
+                />
+              ))}
+            </div>
+
+            {/* Active filter label */}
+            {igFilter && (() => {
+              const acc = instagramAccounts.find(a => a.id === igFilter)
+              return acc ? (
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-gray-400 text-xs">Showing</span>
+                  <span className="text-white text-xs font-semibold">@{acc.username}</span>
+                  <span className="text-gray-500 text-xs">· {acc.followerCount.toLocaleString('en-US')} followers</span>
+                </div>
+              ) : null
+            })()}
+
+            {/* Posts feed */}
+            <div className="space-y-4">
+              {filteredIgPosts.map(post => (
+                <IgPostCard key={post.id} post={post} />
+              ))}
+              {filteredIgPosts.length === 0 && (
+                <div className="text-center py-16">
+                  <p className="text-5xl mb-3">📸</p>
+                  <p className="text-white font-semibold">No posts yet</p>
+                  <p className="text-gray-500 text-sm mt-1">Check back soon</p>
+                </div>
+              )}
+            </div>
+
+            {/* Instagram connect callout */}
+            <div className="mt-6 bg-gradient-to-r from-purple-900/30 via-pink-900/20 to-orange-900/30 border border-purple-500/20 rounded-2xl p-4">
+              <p className="text-white font-bold text-sm mb-1">📲 Are you a brand or community?</p>
+              <p className="text-gray-400 text-xs leading-relaxed">Connect your Instagram Business account in the admin portal to have your posts appear here automatically.</p>
+              <p className="text-purple-400 text-xs font-semibold mt-2">admin.mototrack.id →</p>
+            </div>
+          </div>
         )}
 
         {/* ── MY RIDES TAB ── */}

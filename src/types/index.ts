@@ -251,6 +251,7 @@ export interface MotoEvent {
   endDate?: Date
   location: string
   locationUrl?: string
+  locationCoords?: { lat: number; lng: number }
   ticketType: TicketType
   ticketPrice?: number        // IDR
   ticketUrl?: string
@@ -334,4 +335,37 @@ export interface RideSession {
   startLocation?: string
   endLocation?: string
   isActive: boolean
+}
+
+// ─── Instagram Integration ─────────────────────────────────────
+export type IgMediaType = 'IMAGE' | 'VIDEO' | 'CAROUSEL_ALBUM'
+
+export interface InstagramAccount {
+  id: string
+  igUserId: string
+  username: string
+  displayName: string
+  avatarEmoji: string
+  profilePictureUrl?: string
+  badge: BadgeType
+  followerCount: number
+  bio?: string
+}
+
+export interface InstagramPost {
+  id: string
+  igMediaId: string
+  accountId: string
+  username: string
+  displayName: string
+  avatarEmoji: string
+  badge: BadgeType
+  caption?: string
+  mediaType: IgMediaType
+  mediaUrl?: string
+  mediaEmoji?: string
+  permalink: string
+  timestamp: Date
+  likeCount?: number
+  commentCount?: number
 }

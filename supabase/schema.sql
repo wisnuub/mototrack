@@ -360,3 +360,60 @@ $$ language plpgsql security definer;
 create trigger on_event_interaction_change
   after insert or delete on event_interactions
   for each row execute function update_event_counts();
+
+-- ─── Instagram Integration ────────────────────────────────────────────────────
+
+-- Brand/community Instagram accounts connected via OAuth
+create table if not exists instagram_accounts (
+  id                  uuid primary key default gen_random_uuid(),
+  ig_user_id          text unique not null,
+  username            text not null,
+  display_name        text,
+  bio                 text,
+  profile_picture_url text,
+  follower_count      integer default 0,
+  badge               text,
+  access_token        text not null,
+  token_expires_at    timestamptz,
+  connected_by        uuid references auth.users(id),
+  is_active           boolean default true,
+  created_at          timestamptz default now(),
+  updated_at          timestamptz default now()
+);
+
+-- Cached Instagram posts (fetched by the Edge Function cron)
+create table if not exists instagram_posts (
+  id             uuid primary key default gen_random_uuid(),
+  ig_media_id    text unique not null,
+  account_id     uuid references instagram_accounts(id) on delete cascade,
+  ig_user_id     text not null,
+  username       text not null,
+  caption        text,
+  media_type     text check (media_type in ('IMAGE', 'VIDEO', 'CAROUSEL_ALBUM')),
+  media_url      text,
+  thumbnail_url  text,
+  permalink      text,
+  like_count     integer,
+  comment_count  integer,
+  posted_at      timestamptz,
+  fetched_at     timestamptz default now(),
+  created_at     timestamptz default now()
+);
+
+create index if not exists instagram_posts_account_idx   on instagram_posts(account_id);
+create index if not exists instagram_posts_posted_at_idx on instagram_posts(posted_at desc);
+
+alter table instagram_accounts enable row level security;
+alter table instagram_posts     enable row level security;
+
+create policy "Public reads active accounts" on instagram_accounts
+  for select using (is_active = true);
+
+create policy "Public reads posts" on instagram_posts
+  for select using (true);
+
+create policy "Service manages accounts" on instagram_accounts
+  for all using (auth.role() = 'service_role');
+
+create policy "Service manages posts" on instagram_posts
+  for all using (auth.role() = 'service_role');

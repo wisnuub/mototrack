@@ -636,6 +636,7 @@ type ProfileTab = 'posts' | 'rides' | 'service'
 
 export default function ProfileSheet({ onClose }: { onClose: () => void }) {
   const user = useStore(s => s.user)
+  const signOut = useStore(s => s.signOut)
   const activityPosts = useStore(s => s.activityPosts)
   const rideSessions = useStore(s => s.rideSessions)
   const activeRideSession = useStore(s => s.activeRideSession)
@@ -646,6 +647,11 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
   const [showCreate, setShowCreate] = useState(false)
   const [showBadgeApply, setShowBadgeApply] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
+
+  const handleSignOut = async () => {
+    onClose()
+    await signOut()
+  }
 
   const myId = user?.id ?? 'local'
   const isAdmin = (user as any)?.isAdmin ?? false
@@ -664,14 +670,22 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
       <div className="flex-shrink-0 flex items-center gap-3 px-4 pt-safe py-3 border-b border-white/10">
         <button onClick={onClose} className="text-gray-400"><X size={20} /></button>
         <p className="text-white font-bold">Profile</p>
-        {isAdmin && (
+        <div className="ml-auto flex items-center gap-2">
+          {isAdmin && (
+            <button
+              onClick={() => setShowAdmin(true)}
+              className="flex items-center gap-1.5 bg-accent/10 text-accent text-xs font-semibold px-3 py-1.5 rounded-full"
+            >
+              <Shield size={12} /> Admin
+            </button>
+          )}
           <button
-            onClick={() => setShowAdmin(true)}
-            className="ml-auto flex items-center gap-1.5 bg-accent/10 text-accent text-xs font-semibold px-3 py-1.5 rounded-full"
+            onClick={handleSignOut}
+            className="flex items-center gap-1.5 bg-moto-red/10 text-moto-red text-xs font-semibold px-3 py-1.5 rounded-full"
           >
-            <Shield size={12} /> Admin
+            Sign Out
           </button>
-        )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">

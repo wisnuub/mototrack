@@ -16,7 +16,7 @@ import WeatherPanel from './components/weather/WeatherPanel'
 import ProfileSheet from './components/profile/ProfileSheet'
 import type { TabId, BadgeType } from './types'
 
-type RideMode = 'idle' | 'solo' | 'group'
+type RideMode = 'idle' | 'solo' | 'group' | 'paused'
 
 function RideLauncher({ onStart }: { onStart: (mode: RideMode) => void }) {
   return (
@@ -94,7 +94,7 @@ export default function App() {
   useEffect(() => {
     if (!isSupabaseReady) return
     supabase.auth.onAuthStateChange(async (event, session) => {
-      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') && session?.user) {
         const sbUser = session.user
         const [profile, adminProfile] = await Promise.all([
           dbGetProfile(sbUser.id),
@@ -170,7 +170,7 @@ export default function App() {
 
       {/* Content */}
       <main className="flex-1 overflow-hidden relative">
-        {activeTab === 'map'     && <RideMap rideMode={rideMode} onEndRide={() => setRideMode('idle')} />}
+        {activeTab === 'map'     && <RideMap rideMode={rideMode} onStartRide={() => setRideMode('solo')} onPauseRide={() => setRideMode('paused')} onResumeRide={() => setRideMode('solo')} onEndRide={() => setRideMode('idle')} />}
         {activeTab === 'chat'    && <div className="h-full overflow-hidden"><ChatPanel /></div>}
         {activeTab === 'explore' && <div className="h-full overflow-hidden"><ExplorePanel /></div>}
         {activeTab === 'garage'  && <div className="h-full overflow-hidden"><GaragePanel /></div>}
@@ -188,6 +188,23 @@ export default function App() {
 
       {/* Floating music player */}
       <MusicPlayer />
+
+      {/* Global toast */}
+      <Toast />
+    </div>
+  )
+}
+
+function Toast() {
+  const toast = useStore(s => s.toast)
+  const dismiss = useStore(s => s.dismissToast)
+  if (!toast) return null
+  return (
+    <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-bg-secondary border border-white/10 text-white rounded-2xl px-4 py-3 shadow-2xl backdrop-blur-sm animate-slide-up whitespace-nowrap">
+      <span className="text-sm font-semibold">✓ {toast}</span>
+      <button onClick={dismiss} className="text-gray-400 text-xs font-medium hover:text-white transition-colors ml-1">
+        Dismiss
+      </button>
     </div>
   )
 }

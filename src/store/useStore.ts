@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Rider, Group, Bike, MaintenanceRecord, WeatherData, TabId, TripTemplate, ChatMessage, Conversation, VoiceChannelParticipant, MusicTrack, BikeModification, ModCategory, ActivityPost, ActivityType, BadgeType, RideSession, RideWaypoint, MotoEvent, ShopProduct, EventInteraction } from '../types'
+import type { Rider, Group, Bike, MaintenanceRecord, WeatherData, TabId, TripTemplate, ChatMessage, Conversation, VoiceChannelParticipant, MusicTrack, BikeModification, ModCategory, ActivityPost, ActivityType, BadgeType, RideSession, RideWaypoint, MotoEvent, ShopProduct, EventInteraction, InstagramAccount, InstagramPost } from '../types'
 import {
   MOCK_RIDERS, MOCK_GROUPS, MOCK_BIKES, MOCK_MAINTENANCE, MOCK_TRIP_TEMPLATES,
   MOCK_CONVERSATIONS, MOCK_MESSAGES, MOCK_EVENTS, MOCK_PRODUCTS,
+  MOCK_INSTAGRAM_ACCOUNTS, MOCK_INSTAGRAM_POSTS,
 } from '../data/mockData'
 import { isSupabaseReady } from '../lib/supabase'
 import {
@@ -65,6 +66,7 @@ interface AppState {
   activeBikeId: string | null
   addBike: (bike: Omit<Bike, 'id'>) => Promise<void>
   updateBike: (bikeId: string, updates: Partial<Bike>) => void
+  toggleFavorite: (bikeId: string) => void
   deleteBike: (bikeId: string) => void
   setActiveBike: (bikeId: string) => void
   addMaintenanceRecord: (record: Omit<MaintenanceRecord, 'id'>) => Promise<void>
@@ -97,6 +99,15 @@ interface AppState {
   eventInteractions: EventInteraction[]
   toggleEventInterest: (eventId: string) => void
   markEventAttending: (eventId: string) => void
+
+  // Instagram Brand Feed
+  instagramAccounts: InstagramAccount[]
+  instagramPosts: InstagramPost[]
+
+  // Toast notifications
+  toast: string | null
+  showToast: (message: string) => void
+  dismissToast: () => void
 
   // Weather
   weather: WeatherData | null
@@ -316,9 +327,9 @@ export const useStore = create<AppState>()(
         }))
       },
 
-      // Groups
-      groups: MOCK_GROUPS,
-      activeGroupId: 'group-1',
+      // Groups — hide mock data when using real Supabase accounts
+      groups: isSupabaseReady ? [] : MOCK_GROUPS,
+      activeGroupId: isSupabaseReady ? null : 'group-1',
       setActiveGroup: (groupId) => set({ activeGroupId: groupId }),
 
       createGroup: (name, emoji, description) => {
@@ -390,6 +401,12 @@ export const useStore = create<AppState>()(
       updateBike: (bikeId, updates) => {
         set(state => ({
           bikes: state.bikes.map(b => b.id === bikeId ? { ...b, ...updates } : b)
+        }))
+      },
+
+      toggleFavorite: (bikeId) => {
+        set(state => ({
+          bikes: state.bikes.map(b => b.id === bikeId ? { ...b, isFavorite: !b.isFavorite } : b)
         }))
       },
 
@@ -582,6 +599,17 @@ export const useStore = create<AppState>()(
       events: MOCK_EVENTS,
       products: MOCK_PRODUCTS,
       eventInteractions: [],
+
+      // Instagram Brand Feed
+      instagramAccounts: MOCK_INSTAGRAM_ACCOUNTS,
+      instagramPosts: MOCK_INSTAGRAM_POSTS,
+
+      toast: null,
+      showToast: (message) => {
+        set({ toast: message })
+        setTimeout(() => set(s => s.toast === message ? { toast: null } : {}), 3000)
+      },
+      dismissToast: () => set({ toast: null }),
 
       toggleEventInterest: (eventId) => {
         set(state => {
@@ -882,8 +910,6 @@ export const useStore = create<AppState>()(
       name: 'mototrack-storage',
       partialize: (state) => ({
         user: state.user,
-        bikes: state.bikes,
-        maintenance: state.maintenance,
         savedTripIds: state.savedTripIds,
         activeBikeId: state.activeBikeId,
         activeGroupId: state.activeGroupId,

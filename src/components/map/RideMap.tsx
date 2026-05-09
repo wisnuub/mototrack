@@ -1,25 +1,50 @@
 import { useEffect, useRef, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useStore } from '../../store/useStore'
+import { isSupabaseReady } from '../../lib/supabase'
 import { useRideSimulation } from '../../hooks/useRideSimulation'
-import { BALI_CENTER, KINTAMANI_ROUTE } from '../../data/mockData'
+import { INDONESIA_CENTER, KINTAMANI_ROUTE } from '../../data/mockData'
 import type { Rider } from '../../types'
 
-type RideMode = 'idle' | 'solo' | 'group'
+type RideMode = 'idle' | 'solo' | 'group' | 'paused'
+
+interface RideStop {
+  id: string
+  name: string
+  emoji: string
+  coords: [number, number]
+  arrived: boolean
+}
+
+const DEMO_STOPS: RideStop[] = [
+  { id: 's1', name: 'Ubud',       emoji: '🌿', coords: [-8.4166, 115.2713], arrived: false },
+  { id: 's2', name: 'Kintamani',  emoji: '🌋', coords: [-8.2386, 115.3763], arrived: false },
+  { id: 's3', name: 'Bedugul',    emoji: '🌊', coords: [-8.2748, 115.1669], arrived: false },
+]
+
+function haversineMeters(a: [number, number], b: [number, number]): number {
+  const R = 6371000
+  const toRad = (d: number) => d * Math.PI / 180
+  const dLat = toRad(b[0] - a[0])
+  const dLon = toRad(b[1] - a[1])
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x))
+}
 
 // Fix Leaflet default icon
 delete (L.Icon.Default.prototype as any)._getIconUrl
 
-function createRiderIcon(color: string, isYou: boolean) {
-  const size = isYou ? 44 : 36
+function createRiderIcon(color: string, isYou: boolean, avatar = '🏍️') {
+  const size = isYou ? 48 : 36
+  // For emoji avatars render inside the circle; for "You" add pulsing ring + GPS dot
   const svg = `
-    <svg width="${size}" height="${size}" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
-      ${isYou ? `<circle cx="22" cy="22" r="21" fill="${color}22" stroke="${color}" stroke-width="1.5"/>` : ''}
-      <circle cx="22" cy="22" r="${isYou ? 16 : 14}" fill="${color}" />
-      <text x="22" y="27" text-anchor="middle" font-size="${isYou ? '14' : '12'}" fill="white">🏍️</text>
-      ${isYou ? `<circle cx="32" cy="12" r="5" fill="#30d158"/><text x="32" y="16" text-anchor="middle" font-size="8" fill="white">●</text>` : ''}
+    <svg width="${size}" height="${size}" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+      ${isYou ? `<circle cx="24" cy="24" r="23" fill="${color}28" stroke="${color}" stroke-width="2"/>` : ''}
+      <circle cx="24" cy="24" r="${isYou ? 17 : 14}" fill="${color}" />
+      <text x="24" y="29" text-anchor="middle" font-size="${isYou ? '15' : '12'}" fill="white">${avatar}</text>
+      ${isYou ? `<circle cx="35" cy="13" r="6" fill="#30d158" stroke="#0c0d13" stroke-width="1.5"/>` : ''}
     </svg>
   `
   return L.divIcon({
@@ -41,11 +66,30 @@ function createDestinationIcon() {
   return L.divIcon({ html: svg, className: '', iconSize: [40, 48], iconAnchor: [20, 48], popupAnchor: [0, -48] })
 }
 
-function RecenterMap({ center }: { center: [number, number] }) {
+function createStopIcon(emoji: string, arrived: boolean, num: number) {
+  const color = arrived ? '#30d158' : '#ffd60a'
+  const label = arrived ? '✓' : String(num)
+  const svg = `
+    <svg width="34" height="42" viewBox="0 0 34 42" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17 0C7.6 0 0 7.6 0 17c0 11.5 17 25 17 25S34 28.5 34 17C34 7.6 26.4 0 17 0z" fill="${color}"/>
+      <circle cx="17" cy="16" r="11" fill="#0c0d13"/>
+      <text x="17" y="20" text-anchor="middle" font-size="10" font-weight="bold" fill="white">${label}</text>
+    </svg>
+  `
+  return L.divIcon({ html: svg, className: '', iconSize: [34, 42], iconAnchor: [17, 42], popupAnchor: [0, -42] })
+}
+
+function RecenterMap({ center, gpsGranted }: { center: [number, number]; gpsGranted: boolean }) {
   const map = useMap()
+  const firstGrant = useRef(false)
   useEffect(() => {
-    map.setView(center, map.getZoom(), { animate: true })
-  }, [center, map])
+    if (gpsGranted && !firstGrant.current) {
+      firstGrant.current = true
+      map.setView(center, 13, { animate: true })
+    } else if (firstGrant.current) {
+      map.setView(center, map.getZoom(), { animate: true })
+    }
+  }, [center, gpsGranted, map])
   return null
 }
 
@@ -92,16 +136,469 @@ function LiveStat({ label, value, sub }: LiveStatProps) {
   )
 }
 
-export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: RideMode; onEndRide?: () => void }) {
+// ─── Route → SVG path helper ─────────────────────────────────────────────────
+
+function routeToSvgPath(positions: [number, number][], w: number, h: number, pad = 16): string {
+  if (positions.length < 2) return ''
+  const lats = positions.map(p => p[0])
+  const lngs = positions.map(p => p[1])
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats)
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
+  const latR = maxLat - minLat || 0.001
+  const lngR = maxLng - minLng || 0.001
+  const aw = w - pad * 2, ah = h - pad * 2
+  return positions
+    .map(([lat, lng], i) => {
+      const x = (pad + ((lng - minLng) / lngR) * aw).toFixed(1)
+      const y = ((h - pad) - ((lat - minLat) / latR) * ah).toFixed(1)
+      return `${i === 0 ? 'M' : 'L'}${x},${y}`
+    })
+    .join(' ')
+}
+
+function routeEndpoints(positions: [number, number][], w: number, h: number, pad = 16) {
+  if (positions.length < 2) return null
+  const lats = positions.map(p => p[0]), lngs = positions.map(p => p[1])
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats)
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
+  const latR = maxLat - minLat || 0.001, lngR = maxLng - minLng || 0.001
+  const toXY = ([lat, lng]: [number, number]): [number, number] => [
+    pad + ((lng - minLng) / lngR) * (w - pad * 2),
+    (h - pad) - ((lat - minLat) / latR) * (h - pad * 2),
+  ]
+  return { start: toXY(positions[0]), end: toXY(positions[positions.length - 1]) }
+}
+
+function roundRectCanvas(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r)
+  ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r)
+  ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r)
+  ctx.closePath()
+}
+
+// ─── Ride Share Modal (Strava-style) ─────────────────────────────────────────
+
+interface ShareModalProps {
+  elapsed: number
+  distanceTraveled: number
+  avgSpeed: number
+  maxSpeed: number
+  stops: RideStop[]
+  routePositions: [number, number][]
+  myAvatar: string
+  userName: string
+  formatTime: (s: number) => string
+  onClose: () => void
+}
+
+function RideShareModal({ elapsed, distanceTraveled, avgSpeed, maxSpeed, stops, routePositions, myAvatar, userName, formatTime, onClose }: ShareModalProps) {
+  const [mode, setMode] = useState<'story' | 'camera'>('story')
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
+  const [capturing, setCapturing] = useState(false)
+  const [shared, setShared] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const cameraContainerRef = useRef<HTMLDivElement>(null)
+  const [overlayPos, setOverlayPos] = useState<{ x: number; y: number } | null>(null)
+  const dragData = useRef<{ startX: number; startY: number; posX: number; posY: number } | null>(null)
+
+  const handleDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const overlay = overlayRef.current
+    const container = cameraContainerRef.current
+    if (!overlay || !container) return
+    const oRect = overlay.getBoundingClientRect()
+    const cRect = container.getBoundingClientRect()
+    const posX = oRect.left - cRect.left
+    const posY = oRect.top - cRect.top
+    dragData.current = { startX: e.clientX, startY: e.clientY, posX, posY }
+    setOverlayPos({ x: posX, y: posY })
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  }
+
+  const handleDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragData.current || !overlayRef.current || !cameraContainerRef.current) return
+    const d = dragData.current
+    const cRect = cameraContainerRef.current.getBoundingClientRect()
+    const oRect = overlayRef.current.getBoundingClientRect()
+    const newX = Math.max(0, Math.min(cRect.width - oRect.width, d.posX + e.clientX - d.startX))
+    const newY = Math.max(0, Math.min(cRect.height - oRect.height, d.posY + e.clientY - d.startY))
+    setOverlayPos({ x: newX, y: newY })
+  }
+
+  const handleDragEnd = () => { dragData.current = null }
+
+  const arrivedCount = stops.filter(s => s.arrived).length
+  const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+
+  const storyPath  = routeToSvgPath(routePositions, 280, 140, 16)
+  const storyPts   = routeEndpoints(routePositions, 280, 140, 16)
+  const overlayPath = routeToSvgPath(routePositions, 160, 56, 8)
+
+  // Start camera when switching to camera mode
+  useEffect(() => {
+    if (mode !== 'camera') return
+    let active = true
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .then(stream => {
+        if (!active) { stream.getTracks().forEach(t => t.stop()); return }
+        setCameraStream(stream)
+        if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play() }
+      })
+      .catch(() => setMode('story'))
+    return () => { active = false }
+  }, [mode])
+
+  // Stop camera when leaving camera mode
+  useEffect(() => {
+    return () => { cameraStream?.getTracks().forEach(t => t.stop()) }
+  }, [cameraStream])
+
+  const handleCapture = async () => {
+    if (!videoRef.current || !canvasRef.current || !cameraStream) return
+    setCapturing(true)
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    const VW = video.videoWidth || 1080
+    const VH = video.videoHeight || 1920
+    canvas.width = VW; canvas.height = VH
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(video, 0, 0, VW, VH)
+
+    // Overlay card dimensions — position from drag state or default top-right
+    const OW = Math.min(VW * 0.40, 300)
+    const pad = 16
+    const fs = OW / 10
+    const statRows = 2
+    const OHContent = pad + fs * 1.6 + fs * 0.8 + (statRows * fs * 2.2) + OW * 0.42 + pad
+    let OX: number, OY: number
+    if (overlayPos && cameraContainerRef.current) {
+      const cRect = cameraContainerRef.current.getBoundingClientRect()
+      OX = overlayPos.x * (VW / cRect.width)
+      OY = overlayPos.y * (VH / cRect.height)
+    } else {
+      OX = VW - OW - 20
+      OY = 20
+    }
+
+    // Card background
+    ctx.fillStyle = 'rgba(12,13,19,0.88)'
+    roundRectCanvas(ctx, OX, OY, OW, OHContent, OW * 0.06)
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)'
+    ctx.lineWidth = 1
+    roundRectCanvas(ctx, OX, OY, OW, OHContent, OW * 0.06)
+    ctx.stroke()
+
+    // Top accent line
+    const grad = ctx.createLinearGradient(OX, OY, OX + OW, OY)
+    grad.addColorStop(0, '#ff6b35'); grad.addColorStop(0.5, '#ffd60a'); grad.addColorStop(1, '#ff6b35')
+    ctx.fillStyle = grad
+    roundRectCanvas(ctx, OX, OY, OW, 3, 1.5)
+    ctx.fill()
+
+    // Logo
+    ctx.textBaseline = 'alphabetic'
+    ctx.font = `bold ${fs}px -apple-system, system-ui`
+    ctx.fillStyle = '#ffffff'; ctx.fillText('Moto', OX + pad, OY + pad + fs * 1.1)
+    ctx.fillStyle = '#ff6b35'; ctx.fillText('Track', OX + pad + ctx.measureText('Moto').width, OY + pad + fs * 1.1)
+    ctx.font = `${fs * 0.65}px -apple-system, system-ui`
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillText(dateStr, OX + pad, OY + pad + fs * 2.1)
+
+    // Stats 2×2 grid
+    const statData = [
+      { label: 'DIST',  value: `${distanceTraveled} km` },
+      { label: 'TIME',  value: formatTime(elapsed) },
+      { label: 'AVG',   value: `${avgSpeed} km/h` },
+      { label: 'TOP',   value: `${maxSpeed} km/h` },
+    ]
+    const col = OW / 2
+    statData.forEach((s, i) => {
+      const cx = OX + pad + (i % 2) * col
+      const cy = OY + pad + fs * 2.9 + Math.floor(i / 2) * (fs * 2.3)
+      ctx.font = `bold ${fs * 1.05}px -apple-system, system-ui`
+      ctx.fillStyle = '#ffffff'; ctx.fillText(s.value, cx, cy)
+      ctx.font = `${fs * 0.6}px -apple-system, system-ui`
+      ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillText(s.label, cx, cy + fs * 0.85)
+    })
+
+    // Mini route
+    const routeBoxY = OY + pad + fs * 2.9 + 2 * fs * 2.3 + fs * 0.4
+    const routeBoxH = OW * 0.38
+    ctx.fillStyle = 'rgba(255,255,255,0.04)'
+    roundRectCanvas(ctx, OX + pad, routeBoxY, OW - pad * 2, routeBoxH, 8)
+    ctx.fill()
+    const rPath = routeToSvgPath(routePositions, OW - pad * 2, routeBoxH, 8)
+    if (rPath) {
+      ctx.save()
+      ctx.translate(OX + pad, routeBoxY)
+      ctx.strokeStyle = '#ff6b35'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'
+      ctx.stroke(new Path2D(rPath))
+      ctx.restore()
+    }
+
+    setCapturing(false)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+    try {
+      const blob = await (await fetch(dataUrl)).blob()
+      const file = new File([blob], 'mototrack-ride.jpg', { type: 'image/jpeg' })
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'My Ride · MotoTrack' })
+        setShared(true)
+      } else {
+        const a = document.createElement('a'); a.href = dataUrl; a.download = 'mototrack-ride.jpg'; a.click()
+      }
+    } catch { /* user cancelled */ }
+  }
+
+  const handleShareText = async () => {
+    const text = [
+      `🏍️ Ride Complete!`,
+      `📏 ${distanceTraveled} km  ⏱️ ${formatTime(elapsed)}`,
+      `⚡ Avg ${avgSpeed} km/h  🔝 Top ${maxSpeed} km/h`,
+      arrivedCount > 0 ? `📍 ${arrivedCount}/${stops.length} stops completed` : '',
+      `📅 ${dateStr}`,
+      `\nTracked with MotoTrack 🏁`,
+    ].filter(Boolean).join('\n')
+    try {
+      if (navigator.share) { await navigator.share({ title: 'My Ride', text }); setShared(true) }
+      else { await navigator.clipboard.writeText(text); setShared(true); setTimeout(() => setShared(false), 2000) }
+    } catch { /* cancelled */ }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-black">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 pt-safe pt-4 pb-3 flex-shrink-0 bg-black">
+        <div className="flex gap-2">
+          {(['story', 'camera'] as const).map(m => (
+            <button key={m} onClick={() => setMode(m)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${mode === m ? 'bg-accent text-white' : 'bg-white/10 text-gray-400'}`}>
+              {m === 'story' ? '📊 Stats Card' : '📷 Camera'}
+            </button>
+          ))}
+        </div>
+        <button onClick={onClose} className="w-9 h-9 bg-white/10 rounded-full flex items-center justify-center text-gray-400">✕</button>
+      </div>
+
+      {/* ── Story mode ── */}
+      {mode === 'story' && (
+        <>
+          <div className="flex-1 flex items-center justify-center px-5 py-2 overflow-hidden">
+            {/* 9:16 card */}
+            <div className="relative bg-gray-950 rounded-3xl overflow-hidden border border-white/10 shadow-2xl flex flex-col"
+                 style={{ width: '100%', maxWidth: 340, aspectRatio: '9/16' }}>
+              {/* Top accent stripe */}
+              <div className="h-1 flex-shrink-0 bg-gradient-to-r from-accent via-accent-amber to-accent" />
+
+              <div className="flex-1 flex flex-col p-5 min-h-0">
+                {/* Header row */}
+                <div className="flex items-start justify-between mb-3 flex-shrink-0">
+                  <div>
+                    <p className="text-white font-black text-lg tracking-tight leading-none">
+                      Moto<span className="text-accent">Track</span>
+                    </p>
+                    <p className="text-gray-500 text-[11px] mt-1">{dateStr}</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="w-10 h-10 rounded-full bg-accent/15 border border-accent/20 flex items-center justify-center text-xl">{myAvatar}</div>
+                    <p className="text-gray-500 text-[9px] mt-0.5 truncate max-w-[72px]">{userName}</p>
+                  </div>
+                </div>
+
+                {/* Route map */}
+                <div className="flex-1 bg-gray-900 rounded-2xl relative overflow-hidden mb-3 min-h-0">
+                  <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(255,107,53,0.12) 0%, transparent 65%)' }} />
+                  {routePositions.length >= 2 ? (
+                    <svg viewBox="0 0 280 140" className="w-full h-full p-3" preserveAspectRatio="xMidYMid meet">
+                      <path d={storyPath} fill="none" stroke="#ff6b35" strokeWidth="5" strokeOpacity="0.15" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d={storyPath} fill="none" stroke="#ff6b35" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      {storyPts && <>
+                        <circle cx={storyPts.start[0]} cy={storyPts.start[1]} r="5" fill="#30d158" />
+                        <circle cx={storyPts.end[0]}   cy={storyPts.end[1]}   r="5" fill="#ff453a" />
+                        <circle cx={storyPts.end[0]}   cy={storyPts.end[1]}   r="9" fill="none" stroke="#ff453a" strokeWidth="1.5" strokeOpacity="0.5" />
+                      </>}
+                    </svg>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-5xl opacity-20">🗺️</div>
+                  )}
+                </div>
+
+                {/* Stats 2×2 */}
+                <div className="grid grid-cols-2 gap-2 mb-3 flex-shrink-0">
+                  {[
+                    { icon: '📏', label: 'Distance',  val: `${distanceTraveled}`,  unit: 'km'   },
+                    { icon: '⏱️', label: 'Time',      val: formatTime(elapsed),    unit: ''     },
+                    { icon: '⚡', label: 'Avg Speed', val: `${avgSpeed}`,           unit: 'km/h' },
+                    { icon: '🔝', label: 'Top Speed', val: `${maxSpeed}`,           unit: 'km/h' },
+                  ].map(s => (
+                    <div key={s.label} className="bg-white/5 rounded-2xl px-3 py-2.5">
+                      <p className="text-gray-500 text-[10px] mb-0.5">{s.icon} {s.label}</p>
+                      <p className="text-white font-black text-lg leading-none">
+                        {s.val}<span className="text-gray-500 text-xs font-normal ml-1">{s.unit}</span>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Stops progress */}
+                {stops.length > 0 && (
+                  <div className="flex items-center gap-2 mb-3 flex-shrink-0">
+                    <span className="text-gray-500 text-[10px] flex-shrink-0">Stops</span>
+                    <div className="flex items-center gap-1 flex-1">
+                      {stops.map((s, i) => (
+                        <div key={s.id} className="flex items-center gap-1 flex-1">
+                          {i > 0 && <div className={`h-px flex-1 ${stops[i-1].arrived ? 'bg-moto-green/60' : 'bg-white/10'}`} />}
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${s.arrived ? 'bg-moto-green text-white' : 'bg-white/10 text-gray-500'}`}>
+                            {s.arrived ? '✓' : i + 1}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <span className="text-gray-400 text-xs font-semibold flex-shrink-0">{arrivedCount}/{stops.length}</span>
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="flex items-center justify-between pt-2 border-t border-white/5 flex-shrink-0">
+                  <p className="text-gray-600 text-[9px]">mototrack.id</p>
+                  <p className="text-gray-600 text-[9px]">🏁 Ride Complete</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Share button */}
+          <div className="px-5 pb-8 flex-shrink-0">
+            <button onClick={handleShareText}
+              className="w-full bg-accent text-white font-bold py-4 rounded-2xl text-sm active:scale-95 transition-all flex items-center justify-center gap-2">
+              {shared ? '✓ Shared!' : '↗ Share Stats'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── Camera mode ── */}
+      {mode === 'camera' && (
+        <div ref={cameraContainerRef} className="flex-1 relative overflow-hidden bg-gray-950"
+             onPointerMove={handleDragMove} onPointerUp={handleDragEnd} onPointerLeave={handleDragEnd}>
+          <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
+          <canvas ref={canvasRef} className="hidden" />
+
+          {!cameraStream && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center text-gray-500">
+                <p className="text-5xl mb-3">📷</p>
+                <p className="text-sm font-semibold">Camera access needed</p>
+                <p className="text-xs mt-1 text-gray-600">Allow camera in browser settings</p>
+              </div>
+            </div>
+          )}
+
+          {/* Stats overlay — draggable */}
+          <div
+            ref={overlayRef}
+            onPointerDown={handleDragStart}
+            className="absolute w-44 rounded-2xl overflow-hidden shadow-2xl border border-white/15 cursor-grab active:cursor-grabbing select-none touch-none"
+            style={overlayPos
+              ? { background: 'rgba(12,13,19,0.85)', backdropFilter: 'blur(12px)', left: overlayPos.x, top: overlayPos.y }
+              : { background: 'rgba(12,13,19,0.85)', backdropFilter: 'blur(12px)', top: 16, right: 16 }
+            }
+          >
+            <div className="h-0.5 bg-gradient-to-r from-accent via-accent-amber to-accent" />
+            <div className="p-3">
+              <p className="text-white font-black text-sm tracking-tight leading-none mb-0.5">
+                Moto<span className="text-accent">Track</span>
+              </p>
+              <p className="text-gray-500 text-[9px] mb-2">{dateStr}</p>
+
+              {/* Mini route */}
+              {routePositions.length >= 2 && (
+                <div className="bg-black/30 rounded-xl mb-2 overflow-hidden" style={{ height: 52 }}>
+                  <svg viewBox="0 0 160 52" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+                    <path d={overlayPath} fill="none" stroke="#ff6b35" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { v: `${distanceTraveled} km`, l: 'Distance' },
+                  { v: formatTime(elapsed),       l: 'Time'     },
+                  { v: `${avgSpeed} km/h`,        l: 'Avg'      },
+                  { v: `${maxSpeed} km/h`,        l: 'Top'      },
+                ].map(s => (
+                  <div key={s.l} className="bg-white/8 rounded-xl p-1.5">
+                    <p className="text-white font-bold text-xs leading-none">{s.v}</p>
+                    <p className="text-gray-500 text-[9px] mt-0.5">{s.l}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Drag hint */}
+          <div className="absolute bottom-28 left-0 right-0 flex justify-center pointer-events-none">
+            <span className="bg-black/40 text-white/40 text-[10px] rounded-full px-3 py-1 backdrop-blur-sm">
+              Drag the overlay to reposition
+            </span>
+          </div>
+
+          {/* Shutter button */}
+          <div className="absolute bottom-10 left-0 right-0 flex flex-col items-center gap-3">
+            <button
+              onClick={handleCapture}
+              disabled={capturing || !cameraStream}
+              className="w-18 h-18 rounded-full border-4 border-white/80 flex items-center justify-center active:scale-90 transition-all disabled:opacity-40 shadow-2xl"
+              style={{ width: 72, height: 72 }}
+            >
+              {capturing
+                ? <span className="w-8 h-8 border-2 border-gray-400 border-t-white rounded-full animate-spin" />
+                : <span className="w-14 h-14 bg-white rounded-full" style={{ width: 56, height: 56 }} />
+              }
+            </button>
+            <p className="text-white/50 text-xs">Tap to capture with overlay</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── RideMap ──────────────────────────────────────────────────────────────────
+
+export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, onResumeRide, onEndRide }: {
+  rideMode?: RideMode
+  onStartRide?: () => void
+  onPauseRide?: () => void
+  onResumeRide?: () => void
+  onEndRide?: () => void
+}) {
   const riders = useStore(s => s.riders)
   const groups = useStore(s => s.groups)
   const activeGroupId = useStore(s => s.activeGroupId)
   const isTracking = useStore(s => s.isTracking)
   const setTracking = useStore(s => s.setTracking)
+  const user = useStore(s => s.user)
+
+  // Compute my rider ID — Supabase uses 'rider-{first8ofUID}', mock uses 'rider-1'
+  const myRiderId = user && isSupabaseReady ? `rider-${user.id.slice(0, 8)}` : 'rider-1'
+  const myAvatar = user?.avatar ?? '🏍️'
 
   const [elapsed, setElapsed] = useState(0)
-  const [startTime] = useState<number>(Date.now() - 12 * 60 * 1000)
+  const [lapElapsed, setLapElapsed] = useState(0)
+  const [lapCount, setLapCount] = useState(0)
+  const [showShareCard, setShowShareCard] = useState(false)
+  const [pendingEnd, setPendingEnd] = useState(false)
+  const [stops, setStops] = useState<RideStop[]>(DEMO_STOPS)
+  const [arrivalNotif, setArrivalNotif] = useState<string | null>(null)
+  const prevRideModeRef = useRef<RideMode>('idle')
   const [gpsState, setGpsState] = useState<'idle' | 'granted' | 'denied' | 'asking'>('asking')
+  const [gpsErrorCode, setGpsErrorCode] = useState<number | null>(null)
   const [realPosition, setRealPosition] = useState<[number, number] | null>(null)
   const [mapTarget, setMapTarget] = useState<{ coords: [number, number]; name: string } | null>(null)
   const watchIdRef = useRef<number | null>(null)
@@ -121,37 +618,75 @@ export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: R
   }, [])
 
   // Auto-request GPS on mount — mandatory for map use
-  useEffect(() => {
-    if (!navigator.geolocation) { setGpsState('denied'); return }
+  const startGpsWatch = () => {
+    if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current)
+    if (!navigator.geolocation) { setGpsState('denied'); setGpsErrorCode(0); return }
+    setGpsState('asking')
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude]
         setRealPosition(coords)
         setGpsState('granted')
+        setGpsErrorCode(null)
       },
-      () => setGpsState('denied'),
+      (err) => { setGpsState('denied'); setGpsErrorCode(err.code) },
       { enableHighAccuracy: true, timeout: 15000 }
     )
     watchIdRef.current = watchId
+  }
+
+  useEffect(() => {
+    startGpsWatch()
     return () => {
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeGroup = groups.find(g => g.id === activeGroupId)
-  const me = riders.find(r => r.id === 'rider-1')
-  // Use real GPS coords when available, else fall back to mock rider position
-  const center: [number, number] = realPosition ?? (me ? [me.position.lat, me.position.lng] : BALI_CENTER)
+  const me = riders.find(r => r.id === myRiderId)
+  // Prefer real GPS, fall back to rider position from store, then Indonesia-wide center
+  const center: [number, number] = realPosition ?? (me ? [me.position.lat, me.position.lng] : INDONESIA_CENTER)
 
   const distanceTraveled = 14.2 // km simulated
   const avgSpeed = 58 // km/h simulated
   const maxSpeed = 82 // km/h simulated
   const distRemaining = 53.8
 
+  // Timer: only ticks when actively riding, pauses when rideMode === 'paused'
   useEffect(() => {
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000)
+    if (rideMode === 'idle' || rideMode === 'paused') return
+    const t = setInterval(() => setElapsed(e => e + 1), 1000)
     return () => clearInterval(t)
-  }, [startTime])
+  }, [rideMode])
+
+  // Reset on ride start; capture lap time on pause
+  useEffect(() => {
+    const prev = prevRideModeRef.current
+    if (prev === 'idle' && (rideMode === 'solo' || rideMode === 'group')) {
+      setStops(DEMO_STOPS)
+      setElapsed(0)
+      setLapCount(0)
+    }
+    if ((prev === 'solo' || prev === 'group') && rideMode === 'paused') {
+      setLapElapsed(elapsed)
+      setLapCount(c => c + 1)
+    }
+    prevRideModeRef.current = rideMode
+  }, [rideMode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Geofence: auto-pause + check-in when within 100m of the next stop
+  useEffect(() => {
+    if (!realPosition || rideMode === 'idle' || rideMode === 'paused') return
+    const nextStop = stops.find(s => !s.arrived)
+    if (!nextStop) return
+    if (haversineMeters(realPosition, nextStop.coords) <= 100) {
+      setStops(prev => prev.map(s => s.id === nextStop.id ? { ...s, arrived: true } : s))
+      setArrivalNotif(nextStop.name)
+      onPauseRide?.()
+      const t = setTimeout(() => setArrivalNotif(null), 4000)
+      return () => clearTimeout(t)
+    }
+  }, [realPosition]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const formatTime = (secs: number) => {
     const h = Math.floor(secs / 3600)
@@ -172,15 +707,15 @@ export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: R
       {/* Map */}
       <div className="flex-1 relative">
         <MapContainer
-          center={BALI_CENTER}
-          zoom={11}
+          center={INDONESIA_CENTER}
+          zoom={5}
           className="w-full h-full z-0"
           zoomControl={false}
           attributionControl={false}
         >
           <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; OpenStreetMap contributors'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://carto.com/">CARTO</a>'
           />
 
           {/* Route polyline */}
@@ -207,23 +742,38 @@ export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: R
             />
           )}
 
-          {/* Rider markers */}
-          {riders.filter(r => r.position).map(rider => (
+          {/* Rider markers — other riders from store */}
+          {riders.filter(r => r.position && r.id !== myRiderId).map(rider => (
             <Marker
               key={rider.id}
               position={[rider.position.lat, rider.position.lng]}
-              icon={createRiderIcon(rider.color, rider.id === 'rider-1')}
+              icon={createRiderIcon(rider.color, false, rider.avatar)}
             >
               <Popup className="moto-popup">
                 <div className="bg-bg-card rounded-xl p-3 min-w-[160px]">
                   <p className="text-white font-semibold">{rider.avatar} {rider.name}</p>
-                  <p className="text-gray-400 text-xs mt-1">
-                    {rider.speed} km/h · {rider.status}
-                  </p>
+                  <p className="text-gray-400 text-xs mt-1">{rider.speed} km/h · {rider.status}</p>
                 </div>
               </Popup>
             </Marker>
           ))}
+
+          {/* "You" marker — use real GPS position if available, else store position */}
+          {(realPosition || me) && (
+            <Marker
+              position={realPosition ?? [me!.position.lat, me!.position.lng]}
+              icon={createRiderIcon('#ff6b35', true, myAvatar)}
+            >
+              <Popup className="moto-popup">
+                <div className="bg-bg-card rounded-xl p-3 min-w-[160px]">
+                  <p className="text-white font-semibold">{myAvatar} You</p>
+                  <p className="text-gray-400 text-xs mt-1">
+                    {gpsState === 'granted' ? '📍 GPS Active' : '📍 Approx. location'}
+                  </p>
+                </div>
+              </Popup>
+            </Marker>
+          )}
 
           {/* Destination marker */}
           {activeGroup?.destination && (
@@ -259,27 +809,59 @@ export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: R
             </Marker>
           )}
 
-          <RecenterMap center={mapTarget ? mapTarget.coords : (isTracking ? center : BALI_CENTER)} />
+          {/* Stop geofence circles (100m radius) */}
+          {rideMode !== 'idle' && stops.filter(s => !s.arrived).map((stop, _) => {
+            const idx = stops.indexOf(stop)
+            const isNext = stops.slice(0, idx).every(s => s.arrived)
+            return (
+              <Circle
+                key={`circle-${stop.id}`}
+                center={stop.coords}
+                radius={100}
+                pathOptions={{
+                  color: isNext ? '#ffd60a' : '#ffffff30',
+                  fillColor: isNext ? '#ffd60a' : '#ffffff',
+                  fillOpacity: isNext ? 0.10 : 0.04,
+                  weight: isNext ? 1.5 : 1,
+                  dashArray: '5 5',
+                }}
+              />
+            )
+          })}
+
+          {/* Stop markers */}
+          {rideMode !== 'idle' && stops.map((stop, i) => (
+            <Marker key={`stop-${stop.id}`} position={stop.coords} icon={createStopIcon(stop.emoji, stop.arrived, i + 1)}>
+              <Popup>
+                <div className="bg-bg-card rounded-xl p-3 min-w-[140px]">
+                  <p className="text-white font-semibold text-sm">{stop.emoji} Stop {i + 1}: {stop.name}</p>
+                  <p className="text-gray-400 text-xs mt-1">{stop.arrived ? '✅ Arrived' : '📍 100m auto check-in'}</p>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+
+          <RecenterMap center={mapTarget ? mapTarget.coords : (isTracking ? center : INDONESIA_CENTER)} gpsGranted={gpsState === 'granted'} />
         </MapContainer>
 
-        {/* Top overlay - group + destination */}
-        <div className="absolute top-3 left-3 right-3 z-10 pointer-events-none">
-          <div className="bg-bg-primary/90 backdrop-blur-md rounded-2xl px-4 py-2.5 border border-white/10">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-semibold text-sm">{activeGroup?.emoji} {activeGroup?.name ?? 'No active group'}</p>
-                <p className="text-gray-400 text-xs truncate max-w-[200px]">
-                  {activeGroup?.destinationName ? `🏁 ${activeGroup.destinationName}` : 'No destination set'}
-                </p>
-              </div>
-              <div className="pointer-events-auto">
+        {/* Group + destination overlay — only during active ride */}
+        {rideMode !== 'idle' && (
+          <div className="absolute top-3 left-3 right-3 z-10 pointer-events-none">
+            <div className="bg-bg-primary/90 backdrop-blur-md rounded-2xl px-4 py-2.5 border border-white/10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white font-semibold text-sm">{activeGroup?.emoji} {activeGroup?.name ?? 'No active group'}</p>
+                  <p className="text-gray-400 text-xs truncate max-w-[200px]">
+                    {activeGroup?.destinationName ? `🏁 ${activeGroup.destinationName}` : 'No destination set'}
+                  </p>
+                </div>
                 <span className="bg-moto-green/20 text-moto-green text-xs font-semibold px-2 py-1 rounded-full">
                   {riders.filter(r => r.status !== 'offline').length} riding
                 </span>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Destination banner */}
         {mapTarget && (
@@ -294,28 +876,110 @@ export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: R
           </div>
         )}
 
-        {/* GPS status badges */}
-        {gpsState === 'asking' && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-bg-primary/90 border border-white/10 text-gray-400 rounded-2xl px-4 py-2.5 flex items-center gap-2 text-xs shadow-lg backdrop-blur-sm">
-            <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-            Locating you…
-          </div>
-        )}
-        {gpsState === 'denied' && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-moto-red/20 border border-moto-red/30 text-moto-red rounded-2xl px-4 py-2.5 text-xs font-semibold shadow-lg backdrop-blur-sm text-center">
-            📍 GPS blocked — enable in browser settings
+        {/* Arrival notification toast */}
+        {arrivalNotif && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 bg-moto-green text-white rounded-2xl px-5 py-3 shadow-xl flex items-center gap-3 whitespace-nowrap animate-slide-up">
+            <span className="text-xl">📍</span>
+            <div>
+              <p className="font-bold text-sm">Arrived at {arrivalNotif}!</p>
+              <p className="text-xs opacity-80">Ride paused · tap Resume when ready</p>
+            </div>
           </div>
         )}
 
-        {/* Stop Ride button — visible when a ride is active */}
-        {rideMode !== 'idle' && onEndRide && (
-          <button
-            onClick={onEndRide}
-            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10 bg-moto-red text-white font-bold px-6 py-3 rounded-2xl flex items-center gap-2 text-sm shadow-lg"
-          >
-            ■ Stop Ride
-          </button>
+        {/* Stops progress strip */}
+        {rideMode !== 'idle' && (
+          <div className="absolute bottom-[4.5rem] left-3 right-16 z-10">
+            <div className="bg-bg-primary/90 backdrop-blur-md rounded-2xl px-3 py-2 border border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {stops.map((stop, i) => {
+                const isNext = !stop.arrived && stops.slice(0, i).every(s => s.arrived)
+                return (
+                  <div key={stop.id} className="flex items-center gap-1.5 flex-shrink-0">
+                    {i > 0 && (
+                      <div className={`h-px w-4 flex-shrink-0 ${stops[i - 1].arrived ? 'bg-moto-green/60' : 'bg-white/15'}`} />
+                    )}
+                    <div className={`flex items-center gap-1 transition-opacity ${stop.arrived ? 'opacity-50' : isNext ? 'opacity-100' : 'opacity-30'}`}>
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+                        stop.arrived ? 'bg-moto-green text-white' : isNext ? 'bg-accent-amber text-black ring-2 ring-accent-amber/40' : 'bg-white/10 text-gray-400'
+                      }`}>
+                        {stop.arrived ? '✓' : i + 1}
+                      </div>
+                      <span className="text-[10px] text-white/80 whitespace-nowrap">{stop.emoji} {stop.name}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         )}
+
+        {/* GPS status badges */}
+        {gpsState === 'asking' && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-bg-primary/90 border border-white/10 text-gray-400 rounded-2xl px-4 py-2.5 flex items-center gap-2 text-xs shadow-lg backdrop-blur-sm whitespace-nowrap">
+            <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin flex-shrink-0" />
+            Requesting GPS…
+          </div>
+        )}
+        {gpsState === 'denied' && (
+          <div className="absolute top-16 left-3 right-3 z-10 bg-bg-primary/95 border border-moto-red/30 rounded-2xl p-4 shadow-xl backdrop-blur-sm">
+            <p className="text-moto-red font-bold text-sm mb-1">
+              {gpsErrorCode === 2 ? '📡 GPS signal unavailable' : gpsErrorCode === 3 ? '⏱️ GPS timed out' : '📍 Location access blocked'}
+            </p>
+            {gpsErrorCode === 1 || gpsErrorCode == null ? (
+              <div className="text-gray-400 text-xs space-y-1 mb-3">
+                <p className="font-semibold text-gray-300">How to fix:</p>
+                <p>📱 <strong className="text-white">iOS Safari:</strong> Settings → Privacy &amp; Security → Location Services → Safari → Allow</p>
+                <p>🤖 <strong className="text-white">Android Chrome:</strong> Tap the 🔒 lock icon in the address bar → Permissions → Location → Allow</p>
+                <p>🖥️ <strong className="text-white">Desktop Chrome:</strong> Click the lock icon → Site settings → Location → Allow</p>
+                <p>📲 <strong className="text-white">PWA / Home screen:</strong> Delete &amp; re-add to Home Screen, then allow location when prompted</p>
+              </div>
+            ) : (
+              <p className="text-gray-400 text-xs mb-3">
+                {gpsErrorCode === 2 ? 'Move to an open area or check that Location Services is on for this app.' : 'GPS took too long. Make sure you are outdoors or near a window.'}
+              </p>
+            )}
+            <button
+              onClick={startGpsWatch}
+              className="w-full bg-accent text-white text-xs font-bold py-2 rounded-xl active:scale-95 transition-all"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {/* Ride control buttons — bottom-left */}
+        <div className="absolute bottom-4 left-4 z-10 flex items-center gap-2">
+          {rideMode === 'idle' && (
+            <button onClick={onStartRide}
+              className="bg-moto-green text-white font-bold px-5 py-3 rounded-2xl flex items-center gap-1.5 text-sm shadow-lg active:scale-95 transition-all">
+              ▶ Start Ride
+            </button>
+          )}
+          {(rideMode === 'solo' || rideMode === 'group') && (
+            <>
+              <button onClick={() => { onPauseRide?.(); setShowShareCard(true) }}
+                className="bg-accent-amber text-black font-bold px-4 py-3 rounded-2xl flex items-center gap-1.5 text-sm shadow-lg active:scale-95 transition-all">
+                ⏸ Pause
+              </button>
+              <button onClick={() => { setShowShareCard(true); setPendingEnd(true) }}
+                className="bg-moto-red text-white font-bold px-4 py-3 rounded-2xl flex items-center gap-1.5 text-sm shadow-lg active:scale-95 transition-all">
+                ■ Stop
+              </button>
+            </>
+          )}
+          {rideMode === 'paused' && (
+            <>
+              <button onClick={onResumeRide}
+                className="bg-moto-green text-white font-bold px-4 py-3 rounded-2xl flex items-center gap-1.5 text-sm shadow-lg active:scale-95 transition-all">
+                ▶ Resume
+              </button>
+              <button onClick={() => { setShowShareCard(true); setPendingEnd(true) }}
+                className="bg-moto-red text-white font-bold px-4 py-3 rounded-2xl flex items-center gap-1.5 text-sm shadow-lg active:scale-95 transition-all">
+                ■ End
+              </button>
+            </>
+          )}
+        </div>
 
         {/* Track/center button */}
         <button
@@ -326,32 +990,85 @@ export default function RideMap({ rideMode = 'idle', onEndRide }: { rideMode?: R
         </button>
       </div>
 
-      {/* Live stats bar */}
-      <div className="bg-bg-secondary border-t border-white/5 px-4 py-3">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Live Stats</span>
-          <span className="text-xs text-moto-green font-semibold flex items-center gap-1">
-            <span className="w-1.5 h-1.5 bg-moto-green rounded-full animate-pulse" />
-            Active Ride
-          </span>
+      {/* Live stats — active ride */}
+      {(rideMode === 'solo' || rideMode === 'group') && (
+        <div className="bg-bg-secondary border-t border-white/5 px-4 py-3">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Live Stats</span>
+            <span className="text-xs text-moto-green font-semibold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-moto-green rounded-full animate-pulse" />
+              Active Ride
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <LiveStat label="Distance" value={`${distanceTraveled}`} sub="km" />
+            <LiveStat label="Time" value={formatTime(elapsed)} />
+            <LiveStat label="Avg Speed" value={`${avgSpeed}`} sub="km/h" />
+            <LiveStat label="Top Speed" value={`${maxSpeed}`} sub="km/h" />
+            <LiveStat label="Remaining" value={`${distRemaining}`} sub="km" />
+          </div>
         </div>
-        <div className="flex justify-between">
-          <LiveStat label="Distance" value={`${distanceTraveled}`} sub="km" />
-          <LiveStat label="Time" value={formatTime(elapsed)} />
-          <LiveStat label="Avg Speed" value={`${avgSpeed}`} sub="km/h" />
-          <LiveStat label="Top Speed" value={`${maxSpeed}`} sub="km/h" />
-          <LiveStat label="Remaining" value={`${distRemaining}`} sub="km" />
-        </div>
-      </div>
+      )}
 
-      {/* Rider cards scroll */}
-      <div className="bg-bg-secondary border-t border-white/5 py-3">
-        <div className="flex gap-3 px-4 overflow-x-auto no-scrollbar">
-          {riders.map(rider => (
-            <RiderCard key={rider.id} rider={rider} />
-          ))}
+      {/* Ride share modal */}
+      {showShareCard && (
+        <RideShareModal
+          elapsed={elapsed}
+          distanceTraveled={distanceTraveled}
+          avgSpeed={avgSpeed}
+          maxSpeed={maxSpeed}
+          stops={stops}
+          routePositions={routePositions}
+          myAvatar={myAvatar}
+          userName={user?.name ?? 'Rider'}
+          formatTime={formatTime}
+          onClose={() => {
+            setShowShareCard(false)
+            if (pendingEnd) {
+              setPendingEnd(false)
+              onEndRide?.()
+            }
+          }}
+        />
+      )}
+
+      {/* Lap summary — shown when paused */}
+      {rideMode === 'paused' && (
+        <div className="bg-bg-secondary border-t border-accent-amber/30 px-4 py-3">
+          <div className="flex justify-between items-center mb-2.5">
+            <div>
+              <span className="text-xs text-accent-amber uppercase tracking-wider font-bold">
+                ⏸ Lap {lapCount} Summary
+              </span>
+              <span className="text-gray-500 text-xs ml-2">this segment: {formatTime(lapElapsed)}</span>
+            </div>
+            <span className="text-xs text-gray-500">Total: {formatTime(elapsed)}</span>
+          </div>
+          <div className="grid grid-cols-4 gap-2 mb-2">
+            <LiveStat label="Distance"  value={`${distanceTraveled}`}       sub="km"  />
+            <LiveStat label="Top Speed" value={`${maxSpeed}`}               sub="km/h" />
+            <LiveStat label="Avg Speed" value={`${avgSpeed}`}               sub="km/h" />
+            <LiveStat label="Lean Angle" value="28°"                        sub="max"  />
+          </div>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            {[
+              { icon: '🛑', label: 'Hard Braking',  value: '2x',  color: '#ff453a' },
+              { icon: '⚡', label: 'Rapid Accel',   value: '3x',  color: '#ffd60a' },
+              { icon: '📱', label: 'Phone Alerts',  value: '1x',  color: '#0a84ff' },
+              { icon: '⛽', label: 'Fuel Est.',     value: '~0.8L', color: '#30d158' },
+            ].map(s => (
+              <div key={s.label} className="flex items-center gap-1.5 bg-bg-card rounded-xl px-3 py-1.5 flex-shrink-0 border border-white/5">
+                <span className="text-sm">{s.icon}</span>
+                <div>
+                  <p className="font-bold text-xs leading-none" style={{ color: s.color }}>{s.value}</p>
+                  <p className="text-gray-500 text-[9px] mt-0.5">{s.label}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
     </div>
   )
 }

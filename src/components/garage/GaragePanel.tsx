@@ -63,6 +63,7 @@ function AddMaintenanceModal({ bikeId, odometer, onClose }: {
   onClose: () => void
 }) {
   const addRecord = useStore(s => s.addMaintenanceRecord)
+  const showToast = useStore(s => s.showToast)
   const [type, setType] = useState<MaintenanceType>('oil_change')
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [odo, setOdo] = useState(String(odometer))
@@ -81,6 +82,7 @@ function AddMaintenanceModal({ bikeId, odometer, onClose }: {
         ? parseInt(odo) + MAINT_LABELS[type].interval
         : undefined,
     })
+    showToast('Maintenance logged!')
     onClose()
   }
 
@@ -223,6 +225,7 @@ function shopPlatform(url: string): { label: string; color: string } {
 
 function AddModModal({ bikeId, onClose }: { bikeId: string; onClose: () => void }) {
   const addMod = useStore(s => s.addMod)
+  const showToast = useStore(s => s.showToast)
   const [category, setCategory] = useState<ModCategory>('exhaust')
   const [name, setName] = useState('')
   const [brand, setBrand] = useState('')
@@ -240,6 +243,7 @@ function AddModModal({ bikeId, onClose }: { bikeId: string; onClose: () => void 
       shopUrl: shopUrl.trim() || undefined,
       price: price ? parseInt(price) : undefined,
     })
+    showToast('Modification added!')
     onClose()
   }
 
@@ -486,6 +490,8 @@ function GarageActivitySection() {
 function EditBikeModal({ bike, onClose }: { bike: Bike; onClose: () => void }) {
   const updateBike = useStore(s => s.updateBike)
   const deleteBike = useStore(s => s.deleteBike)
+  const toggleFavorite = useStore(s => s.toggleFavorite)
+  const showToast = useStore(s => s.showToast)
   const [nickname, setNickname] = useState(bike.nickname)
   const [plate, setPlate] = useState(bike.plateNumber ?? '')
   const [odometer, setOdometer] = useState(String(bike.odometer))
@@ -499,6 +505,7 @@ function EditBikeModal({ bike, onClose }: { bike: Bike; onClose: () => void }) {
       odometer: parseInt(odometer) || bike.odometer,
       notes: notes.trim() || undefined,
     })
+    showToast('Settings saved!')
     onClose()
   }
 
@@ -578,6 +585,8 @@ function BikeDetail({ bike }: { bike: Bike }) {
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()))
   const sendMessage = useStore(s => s.sendMessage)
   const updateBike = useStore(s => s.updateBike)
+  const toggleFavorite = useStore(s => s.toggleFavorite)
+  const showToast = useStore(s => s.showToast)
   const photoRef = useRef<HTMLInputElement>(null)
   const [showAddMaint, setShowAddMaint] = useState(false)
   const [showSharePicker, setShowSharePicker] = useState(false)
@@ -635,12 +644,17 @@ function BikeDetail({ bike }: { bike: Bike }) {
         </button>
         <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
 
-        {bike.isFavorite && (
-          <div className="absolute top-3 left-3 flex items-center gap-1 bg-accent-amber/90 rounded-full px-2.5 py-1">
-            <Star size={11} fill="white" className="text-white" />
-            <span className="text-white text-xs font-bold">Favorite</span>
-          </div>
-        )}
+        <button
+          onClick={() => { toggleFavorite(bike.id); showToast(bike.isFavorite ? 'Removed from favorites' : 'Set as favorite!') }}
+          className={`absolute top-3 left-3 flex items-center gap-1 rounded-full px-2.5 py-1 active:scale-95 transition-all ${
+            bike.isFavorite ? 'bg-accent-amber/90' : 'bg-black/50'
+          }`}
+        >
+          <Star size={11} fill={bike.isFavorite ? 'white' : 'none'} className={bike.isFavorite ? 'text-white' : 'text-gray-300'} />
+          <span className={`text-xs font-bold ${bike.isFavorite ? 'text-white' : 'text-gray-300'}`}>
+            {bike.isFavorite ? 'Favorite' : 'Set Favorite'}
+          </span>
+        </button>
         <div className="absolute top-3 right-3 flex items-center gap-2">
           <button
             onClick={() => setShowEdit(true)}
