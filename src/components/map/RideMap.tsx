@@ -686,12 +686,12 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
   const maxSpeed = 82 // km/h simulated
   const distRemaining = 53.8
 
-  // Timer: only ticks when actively riding, pauses when rideMode === 'paused'
+  // Timer: ticks only during active riding — pauses when rideMode is paused, idle, or share card is open
   useEffect(() => {
-    if (rideMode === 'idle' || rideMode === 'paused') return
+    if (rideMode === 'idle' || rideMode === 'paused' || showShareCard) return
     const t = setInterval(() => setElapsed(e => e + 1), 1000)
     return () => clearInterval(t)
-  }, [rideMode])
+  }, [rideMode, showShareCard])
 
   // Reset on ride start; capture lap time on pause
   useEffect(() => {
@@ -748,8 +748,9 @@ export default function RideMap({ rideMode = 'idle', onStartRide, onPauseRide, o
           attributionControl={false}
         >
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
             attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+            maxZoom={19}
           />
 
           {/* Route polyline — only during active ride */}
