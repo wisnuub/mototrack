@@ -259,32 +259,31 @@ function RideLauncher({
 // ── Install / Add-to-Home-Screen banner ───────────────────────────────────────
 
 function InstallBanner() {
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  // Seed from window.__pwaPrompt captured before React mounted
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(() => (window as any).__pwaPrompt ?? null)
   const [visible, setVisible] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !/CriOS|FxiOS/.test(navigator.userAgent)
   const isStandalone = ('standalone' in navigator && (navigator as any).standalone) || window.matchMedia('(display-mode: standalone)').matches
   const isDismissed = () => {
     const ts = localStorage.getItem('install-dismissed')
     if (!ts) return false
-    return Date.now() - Number(ts) < 14 * 24 * 60 * 60 * 1000 // 14 days
+    return Date.now() - Number(ts) < 14 * 24 * 60 * 60 * 1000
   }
 
   useEffect(() => {
     if (isStandalone || isDismissed()) return
-
-    const handler = (e: Event) => { e.preventDefault(); setDeferredPrompt(e) }
-    window.addEventListener('beforeinstallprompt', handler)
-
-    // Show after a short delay so user can orient themselves first
-    timerRef.current = setTimeout(() => setVisible(true), 6000)
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handler)
-      if (timerRef.current) clearTimeout(timerRef.current)
+    // Listen in case event fires after mount
+    const handler = (e: Event) => {
+      e.preventDefault()
+      setDeferredPrompt(e)
+      ;(window as any).__pwaPrompt = e
     }
-  }, [])
+    window.addEventListener('beforeinstallprompt', handler)
+    // Show banner after brief delay
+    const t = setTimeout(() => setVisible(true), 2500)
+    return () => { window.removeEventListener('beforeinstallprompt', handler); clearTimeout(t) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const dismiss = () => {
     localStorage.setItem('install-dismissed', String(Date.now()))
@@ -438,14 +437,14 @@ export default function App() {
         <div className="flex items-center gap-2">
           {rideMode !== 'idle' ? (
             <ActiveRideBadge mode={rideMode} onEnd={() => setRideMode('idle')} />
-          ) : (
+          ) : activeTab !== 'map' ? (
             <button
               onClick={() => setShowLauncher(true)}
               className="bg-accent text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1"
             >
               ▶ Start Ride
             </button>
-          )}
+          ) : null}
 
           <button
             onClick={() => setShowProfile(true)}

@@ -126,6 +126,8 @@ interface AppState {
   sendMessage: (convId: string, content: string, type?: ChatMessage['type'], extra?: Partial<ChatMessage>) => Promise<void>
   markRead: (convId: string) => void
   addReaction: (messageId: string, emoji: string, userId: string) => void
+  createGroupConversation: (name: string, emoji: string, participantIds: string[]) => string
+  createDmConversation: (riderId: string, riderName: string, riderAvatar: string) => string
 
   // Voice channel
   voiceConvId: string | null
@@ -801,6 +803,37 @@ export const useStore = create<AppState>()(
             return { ...m, reactions: [...m.reactions, { emoji, userIds: [userId] }] }
           }),
         }))
+      },
+
+      createGroupConversation: (name, emoji, participantIds) => {
+        const id = `conv-${Date.now()}`
+        const newConv: Conversation = {
+          id, type: 'group', name, emoji,
+          participantIds,
+          unreadCount: 0, isPinned: false,
+        }
+        set(state => ({ conversations: [newConv, ...state.conversations] }))
+        return id
+      },
+
+      createDmConversation: (riderId, riderName, riderAvatar) => {
+        const user = get().user
+        const myId = user?.id ?? 'rider-1'
+        // Return existing DM if already exists
+        const existing = get().conversations.find(
+          c => c.type === 'dm' && c.participantIds.includes(riderId) && c.participantIds.includes(myId)
+        )
+        if (existing) return existing.id
+        const id = `conv-${Date.now()}`
+        const newConv: Conversation = {
+          id, type: 'dm',
+          name: riderName,
+          emoji: riderAvatar,
+          participantIds: [myId, riderId],
+          unreadCount: 0, isPinned: false,
+        }
+        set(state => ({ conversations: [newConv, ...state.conversations] }))
+        return id
       },
 
       // Voice channel

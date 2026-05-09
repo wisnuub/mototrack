@@ -1017,14 +1017,139 @@ function ConvRow({ conv, onSelect }: { conv: Conversation; onSelect: () => void 
 // ─── New Group Modal ──────────────────────────────────────────────────────────
 
 function NewGroupModal({ onClose }: { onClose: () => void }) {
-  const createGroup = useStore(s => s.createGroup)
+  const createGroupConversation = useStore(s => s.createGroupConversation)
+  const setActiveConversation = useStore(s => s.setActiveConversation)
+  const riders = useStore(s => s.riders)
+  const user = useStore(s => s.user)
+  const myId = user?.id ?? 'rider-1'
+
   const [name, setName] = useState('')
   const [emoji, setEmoji] = useState('🏍️')
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<string[]>([])
   const EMOJIS = ['🏍️', '🌊', '🌋', '⚡', '🔥', '🎯', '🚀', '🌴', '💨', '🏆', '☀️', '🤙']
+
+  const filtered = riders.filter(r =>
+    r.id !== myId &&
+    (r.name.toLowerCase().includes(search.toLowerCase()) ||
+     r.id.toLowerCase().includes(search.toLowerCase()))
+  )
+
+  const toggle = (id: string) =>
+    setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
 
   const handle = () => {
     if (!name.trim()) return
-    createGroup(name, emoji, '')
+    const id = createGroupConversation(name.trim(), emoji, [myId, ...selected])
+    setActiveConversation(id)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-bg-secondary rounded-t-3xl p-5 w-full max-w-lg animate-slide-up pb-safe max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-bold text-lg">New Group</h3>
+          <button onClick={onClose} className="text-gray-400"><X size={20} /></button>
+        </div>
+
+        {/* Emoji picker */}
+        <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
+          {EMOJIS.map(e => (
+            <button key={e} onClick={() => setEmoji(e)}
+              className={`w-10 h-10 rounded-xl text-xl flex-shrink-0 transition-all ${emoji === e ? 'bg-accent/20 ring-2 ring-accent' : 'bg-bg-card'}`}>
+              {e}
+            </button>
+          ))}
+        </div>
+
+        {/* Group name */}
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Group name"
+          className="w-full bg-bg-card border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-accent text-sm mb-3"
+          autoFocus
+        />
+
+        {/* Add people */}
+        <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">Add People</p>
+        <div className="relative mb-2">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name or username"
+            className="w-full bg-bg-card border border-white/10 rounded-xl pl-8 pr-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-accent text-sm"
+          />
+        </div>
+
+        {/* Selected chips */}
+        {selected.length > 0 && (
+          <div className="flex gap-1.5 mb-2 flex-wrap">
+            {selected.map(id => {
+              const r = riders.find(x => x.id === id)
+              return r ? (
+                <button key={id} onClick={() => toggle(id)}
+                  className="flex items-center gap-1 bg-accent/20 text-accent text-xs px-2 py-1 rounded-full">
+                  <span>{r.avatar}</span> {r.name} <X size={10} />
+                </button>
+              ) : null
+            })}
+          </div>
+        )}
+
+        {/* Rider list */}
+        <div className="flex-1 overflow-y-auto min-h-0 space-y-1 mb-4">
+          {filtered.length === 0 ? (
+            <p className="text-gray-600 text-sm text-center py-4">No riders found</p>
+          ) : filtered.map(r => (
+            <button key={r.id} onClick={() => toggle(r.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left ${
+                selected.includes(r.id) ? 'bg-accent/15 border border-accent/30' : 'bg-bg-card hover:bg-white/5'
+              }`}>
+              <span className="text-xl flex-shrink-0">{r.avatar}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-sm font-medium truncate">{r.name}</p>
+                <p className="text-gray-500 text-xs truncate">@{r.id}</p>
+              </div>
+              {selected.includes(r.id) && <span className="text-accent text-sm">✓</span>}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={handle}
+          disabled={!name.trim()}
+          className="w-full bg-accent text-white font-semibold py-3 rounded-xl disabled:opacity-40"
+        >
+          Create Group {selected.length > 0 ? `· ${selected.length + 1} members` : ''}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── New DM Modal ─────────────────────────────────────────────────────────────
+
+function NewDmModal({ onClose }: { onClose: () => void }) {
+  const createDmConversation = useStore(s => s.createDmConversation)
+  const setActiveConversation = useStore(s => s.setActiveConversation)
+  const riders = useStore(s => s.riders)
+  const user = useStore(s => s.user)
+  const myId = user?.id ?? 'rider-1'
+
+  const [search, setSearch] = useState('')
+  const filtered = riders.filter(r =>
+    r.id !== myId &&
+    (r.name.toLowerCase().includes(search.toLowerCase()) ||
+     r.id.toLowerCase().includes(search.toLowerCase()))
+  )
+
+  const open = (r: typeof riders[0]) => {
+    const id = createDmConversation(r.id, r.name, r.avatar)
+    setActiveConversation(id)
     onClose()
   }
 
@@ -1033,36 +1158,34 @@ function NewGroupModal({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-bg-secondary rounded-t-3xl p-5 w-full max-w-lg animate-slide-up pb-safe">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-bold text-lg">New Group</h3>
+          <h3 className="text-white font-bold text-lg">New Message</h3>
           <button onClick={onClose} className="text-gray-400"><X size={20} /></button>
         </div>
-        <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
-          {EMOJIS.map(e => (
-            <button
-              key={e}
-              onClick={() => setEmoji(e)}
-              className={`w-10 h-10 rounded-xl text-xl flex-shrink-0 transition-all ${
-                emoji === e ? 'bg-accent/20 ring-2 ring-accent' : 'bg-bg-card'
-              }`}
-            >
-              {e}
+        <div className="relative mb-3">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name or username"
+            className="w-full bg-bg-card border border-white/10 rounded-xl pl-8 pr-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-accent text-sm"
+            autoFocus
+          />
+        </div>
+        <div className="space-y-1 max-h-72 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <p className="text-gray-600 text-sm text-center py-6">No riders found</p>
+          ) : filtered.map(r => (
+            <button key={r.id} onClick={() => open(r)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-bg-card hover:bg-white/5 transition-all text-left">
+              <span className="text-xl flex-shrink-0">{r.avatar}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-sm font-medium truncate">{r.name}</p>
+                <p className="text-gray-500 text-xs truncate">@{r.id}</p>
+              </div>
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${r.status === 'riding' ? 'bg-moto-green' : r.status === 'stopped' ? 'bg-accent-amber' : 'bg-gray-600'}`} />
             </button>
           ))}
         </div>
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="Group name"
-          className="w-full bg-bg-card border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-accent text-sm mb-4"
-          autoFocus
-        />
-        <button
-          onClick={handle}
-          disabled={!name.trim()}
-          className="w-full bg-accent text-white font-semibold py-3 rounded-xl disabled:opacity-40"
-        >
-          Create Group
-        </button>
       </div>
     </div>
   )
@@ -1076,6 +1199,7 @@ export default function ChatPanel() {
   const setActiveConversation = useStore(s => s.setActiveConversation)
   const voiceConvId = useStore(s => s.voiceConvId)
   const [showNewGroup, setShowNewGroup] = useState(false)
+  const [showNewDm, setShowNewDm] = useState(false)
 
   const groupConvs = conversations.filter(c => c.type === 'group')
   const dmConvs = conversations.filter(c => c.type === 'dm')
@@ -1102,12 +1226,20 @@ export default function ChatPanel() {
             </span>
           )}
         </div>
-        <button
-          onClick={() => setShowNewGroup(true)}
-          className="flex items-center gap-1.5 bg-accent text-white text-sm font-semibold px-3 py-2 rounded-xl"
-        >
-          <Plus size={14} /> New Group
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowNewDm(true)}
+            className="flex items-center gap-1 bg-white/10 text-gray-300 text-sm font-semibold px-3 py-2 rounded-xl"
+          >
+            <Plus size={14} /> DM
+          </button>
+          <button
+            onClick={() => setShowNewGroup(true)}
+            className="flex items-center gap-1.5 bg-accent text-white text-sm font-semibold px-3 py-2 rounded-xl"
+          >
+            <Plus size={14} /> Group
+          </button>
+        </div>
       </div>
 
       {/* Voice bar if active outside a conversation */}
@@ -1128,12 +1260,18 @@ export default function ChatPanel() {
           <ConvRow key={conv.id} conv={conv} onSelect={() => setActiveConversation(conv.id)} />
         ))}
         {dmConvs.length === 0 && (
-          <p className="text-gray-600 text-sm px-4 py-2">No direct messages yet</p>
+          <button
+            onClick={() => setShowNewDm(true)}
+            className="w-full text-left px-4 py-3 text-accent text-sm flex items-center gap-2"
+          >
+            <Plus size={14} /> Start a new conversation
+          </button>
         )}
         <div className="h-4" />
       </div>
 
       {showNewGroup && <NewGroupModal onClose={() => setShowNewGroup(false)} />}
+      {showNewDm && <NewDmModal onClose={() => setShowNewDm(false)} />}
     </div>
   )
 }
