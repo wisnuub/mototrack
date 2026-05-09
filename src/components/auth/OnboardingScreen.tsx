@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import Cropper from 'react-easy-crop'
 import { useStore } from '../../store/useStore'
 import { dbUploadAvatar } from '../../lib/db'
 import { isSupabaseReady } from '../../lib/supabase'
 import { BIKE_BRANDS } from '../../data/bikeData'
+import type { ModelInfo } from '../../data/bikeData'
 import type { Bike, BikeType } from '../../types'
 
 // ── Types ──────────────────────────────────────────────────────
@@ -147,6 +148,209 @@ function ContinueBtn({ onClick, disabled = false, loading = false, label = 'Cont
 
 // ── Main Onboarding ─────────────────────────────────────────────
 
+// ── ModelYearStep ────────────────────────────────────────────────────────────
+
+interface ModelYearStepProps {
+  brand: string
+  model: string; setModel: (v: string) => void
+  year: string;  setYear:  (v: string) => void
+  modelSearch: string; setModelSearch: (v: string) => void
+  showDropdown: boolean; setShowDropdown: (v: boolean) => void
+  selectedModelInfo: ModelInfo | null
+  onSelectModel: (info: ModelInfo) => void
+  onNext: () => void
+}
+
+function ModelYearStep({
+  brand, model, setModel, year, setYear,
+  modelSearch, setModelSearch,
+  showDropdown, setShowDropdown,
+  selectedModelInfo, onSelectModel, onNext,
+}: ModelYearStepProps) {
+  const NOW = new Date().getFullYear()
+  const brandData = BIKE_BRANDS.find(b => b.name === brand)
+  const detailedModels: ModelInfo[] = brandData?.models ?? []
+
+  // Merge detailed models + catalog names (deduplicated)
+  const detailedNames = new Set(detailedModels.map(m => m.name.toLowerCase()))
+  const catalogOnly: string[] = (brandData?.modelCatalog ?? []).filter(
+    name => !detailedNames.has(name.toLowerCase())
+  )
+
+  const filtered = useMemo(() => {
+    const q = modelSearch.toLowerCase().trim()
+    const matchedDetailed = q
+      ? detailedModels.filter(m => m.name.toLowerCase().includes(q))
+      : detailedModels
+    const matchedCatalog = q
+      ? catalogOnly.filter(n => n.toLowerCase().includes(q))
+      : catalogOnly
+    return { detailed: matchedDetailed, catalog: matchedCatalog }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelSearch, brand])
+
+  // Year range for selected model
+  const yearFrom = selectedModelInfo?.yearFrom ?? 1960
+  const yearTo   = selectedModelInfo?.yearTo   ?? NOW
+  const years    = Array.from({ length: yearTo - yearFrom + 1 }, (_, i) => yearTo - i)
+
+  const isValid = model.trim().length > 0 && year.length === 4
+
+  return (
+    <div className="flex flex-col h-screen pt-safe">
+      {/* Brand logo faded header */}
+      <div className="flex-shrink-0 pt-10 pb-4 px-8 text-center">
+        {brand && (
+          <img
+            src={BIKE_BRANDS.find(b => b.name === brand)?.logoUrl}
+            className="h-10 object-contain mx-auto mb-4 opacity-50"
+            onError={e => (e.target as HTMLImageElement).style.display = 'none'}
+          />
+        )}
+        <h2 className="text-3xl font-black text-white mb-1">
+          {brand ? `Which ${brand}?` : 'Your bike'}
+        </h2>
+        <p className="text-gray-400 text-sm">Search and select your model</p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-8">
+        {/* Model search input */}
+        <div className="relative mb-4">
+          <input
+            type="text"
+            value={modelSearch}
+            onChange={e => {
+              setModelSearch(e.target.value)
+              setModel(e.target.value)
+              setShowDropdown(true)
+              if (!e.target.value) { setModel('') }
+            }}
+            onFocus={() => setShowDropdown(true)}
+            className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-accent text-base"
+            placeholder={brand ? `Search ${brand} models…` : 'Search model…'}
+            autoFocus
+          />
+          {modelSearch && (
+            <button
+              onClick={() => { setModelSearch(''); setModel(''); setShowDropdown(false) }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-xl"
+            >×</button>
+          )}
+        </div>
+
+        {/* Dropdown results */}
+        {showDropdown && (filtered.detailed.length > 0 || filtered.catalog.length > 0) && (
+          <div className="bg-bg-card border border-white/10 rounded-2xl overflow-hidden mb-4">
+            {/* Detailed models — show first (have specs) */}
+            {filtered.detailed.slice(0, 8).map((m, i) => (
+              <button
+                key={`d-${i}`}
+                onClick={() => onSelectModel(m)}
+                className="w-full flex items-center justify-between px-5 py-3 hover:bg-white/5 active:bg-white/10 transition-colors border-b border-white/5"
+              >
+                <span className="text-white font-semibold text-sm">{m.name}</span>
+                <span className="text-gray-500 text-xs">{m.cc}cc · {m.yearFrom}–{m.yearTo === NOW ? 'now' : m.yearTo}</span>
+              </button>
+            ))}
+            {/* Catalog-only names */}
+            {filtered.catalog.slice(0, 10).map((name, i) => (
+              <button
+                key={`c-${i}`}
+                onClick={() => {
+                  setModelSearch(name); setModel(name); setShowDropdown(false)
+                }}
+                className="w-full flex items-center justify-between px-5 py-3 hover:bg-white/5 active:bg-white/10 transition-colors border-b border-white/5 last:border-0"
+              >
+                <span className="text-white text-sm">{name}</span>
+                <span className="text-gray-600 text-xs">Select year manually</span>
+              </button>
+            ))}
+            {(filtered.detailed.length + filtered.catalog.length) > 18 && (
+              <div className="px-5 py-2 text-gray-600 text-xs text-center">
+                +{filtered.detailed.length + filtered.catalog.length - 18} more — keep typing
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* No results hint */}
+        {showDropdown && modelSearch.length > 1 && filtered.detailed.length === 0 && filtered.catalog.length === 0 && (
+          <div className="bg-bg-card border border-white/10 rounded-2xl px-5 py-4 mb-4 text-center">
+            <p className="text-gray-400 text-sm">No match — you can still type your model manually</p>
+          </div>
+        )}
+
+        {/* Year selector — shown once model is chosen */}
+        {model.trim().length > 0 && (
+          <div className="mb-6">
+            <p className="text-gray-400 text-xs mb-3 font-semibold uppercase tracking-widest">Year</p>
+            {selectedModelInfo ? (
+              /* Horizontal scroll year chips */
+              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                {years.map(y => (
+                  <button
+                    key={y}
+                    onClick={() => setYear(y.toString())}
+                    className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-bold transition-all ${
+                      year === y.toString()
+                        ? 'bg-accent text-white shadow-lg shadow-accent/30'
+                        : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                    }`}
+                  >
+                    {y}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              /* Free-text year for unknown/manual models */
+              <input
+                type="number"
+                value={year}
+                onChange={e => setYear(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-accent text-base text-center"
+                placeholder={`Year (e.g. ${NOW})`}
+                min={1950}
+                max={NOW + 1}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Auto-filled details preview */}
+        {selectedModelInfo && (
+          <div className="bg-white/4 border border-white/8 rounded-2xl px-5 py-4 mb-6 space-y-2">
+            <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">Auto-filled details</p>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Engine</span>
+              <span className="text-white font-semibold">{selectedModelInfo.cc} cc · {selectedModelInfo.cylinders}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Type</span>
+              <span className="text-white font-semibold capitalize">{selectedModelInfo.type}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Drive</span>
+              <span className="text-white font-semibold capitalize">{selectedModelInfo.driveType}</span>
+            </div>
+          </div>
+        )}
+
+        <ContinueBtn onClick={onNext} disabled={!isValid} />
+
+        {/* Not Listed */}
+        <a
+          href={`mailto:wisnuadi415@gmail.com?subject=New%20Bike%20Suggestion%20%E2%80%94%20${encodeURIComponent(brand)}&body=Hi%2C%0A%0AMy%20bike%20is%20not%20listed%20in%20MotoTrack.%20Here%20are%20the%20details%3A%0A%0ABrand%3A%20${encodeURIComponent(brand)}%0AModel%3A%20%5BYour%20model%20name%5D%0AYear%3A%20%5BYear%5D%0AEngine%3A%20%5Bcc%5D%0AType%3A%20%5Bnaked%20%2F%20sport%20%2F%20matic%20%2F%20adventure%20%2F%20cruiser%20%2F%20touring%5D%0A%0AThanks!`}
+          className="block text-center text-gray-600 text-sm py-4 hover:text-accent transition-colors"
+        >
+          Not listed? Tell me about your bike!
+        </a>
+      </div>
+    </div>
+  )
+}
+
+// ── OnboardingScreen ─────────────────────────────────────────────────────────
+
 export default function OnboardingScreen() {
   const user = useStore(s => s.user)
   const completeSetup = useStore(s => s.completeSetup)
@@ -172,6 +376,9 @@ export default function OnboardingScreen() {
   const [bikeType, setBikeType] = useState<BikeType>('naked')
   const [cc, setCc] = useState('')
   const [plate, setPlate] = useState('')
+  const [selectedModelInfo, setSelectedModelInfo] = useState<ModelInfo | null>(null)
+  const [modelSearch, setModelSearch] = useState('')
+  const [showModelDropdown, setShowModelDropdown] = useState(false)
 
   const [loading, setLoading] = useState(false)
 
@@ -430,54 +637,30 @@ export default function OnboardingScreen() {
           </div>
         </Screen>
 
-        {/* ── Step 4: Model + Year ─────────────────────────────── */}
+        {/* ── Step 4: Model search + Year ──────────────────────── */}
         <Screen visible={step === 4}>
-          <div className="flex flex-col items-center justify-center flex-1 px-8 pt-safe min-h-screen">
-            {brand && (
-              <div className="mb-6 opacity-60">
-                <img
-                  src={BIKE_BRANDS.find(b => b.name === brand)?.logoUrl}
-                  className="h-12 object-contain"
-                  onError={e => (e.target as HTMLImageElement).style.display = 'none'}
-                />
-              </div>
-            )}
-
-            <div className="text-center mb-10 w-full">
-              <h2 className="text-3xl font-black text-white mb-2">
-                {brand ? `Which ${brand}?` : 'Your bike'}
-              </h2>
-              <p className="text-gray-400 text-sm">Model name and year</p>
-            </div>
-
-            <div className="w-full max-w-xs space-y-3">
-              {!brand && (
-                <input
-                  type="text"
-                  value={brand}
-                  onChange={e => setBrand(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-accent text-base text-center"
-                  placeholder="Brand (e.g. Yamaha)"
-                />
-              )}
-              <input
-                type="text"
-                value={model}
-                onChange={e => setModel(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-accent text-base text-center"
-                placeholder="Model (e.g. MT-15)"
-                autoFocus
-              />
-              <input
-                type="number"
-                value={year}
-                onChange={e => setYear(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-accent text-base text-center"
-                placeholder="Year"
-              />
-              <ContinueBtn onClick={next} disabled={!model.trim()} />
-            </div>
-          </div>
+          <ModelYearStep
+            brand={brand}
+            model={model}
+            setModel={setModel}
+            year={year}
+            setYear={setYear}
+            modelSearch={modelSearch}
+            setModelSearch={setModelSearch}
+            showDropdown={showModelDropdown}
+            setShowDropdown={setShowModelDropdown}
+            selectedModelInfo={selectedModelInfo}
+            onSelectModel={(info) => {
+              setSelectedModelInfo(info)
+              setModel(info.name)
+              setYear(info.yearTo.toString())
+              setBikeType(info.type)
+              setCc(info.cc.toString())
+              setShowModelDropdown(false)
+              setModelSearch(info.name)
+            }}
+            onNext={next}
+          />
         </Screen>
 
         {/* ── Step 5: Type + CC + Plate ────────────────────────── */}
