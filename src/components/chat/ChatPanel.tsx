@@ -1278,6 +1278,16 @@ export default function ChatPanel() {
 
   const activeConv = conversations.find(c => c.id === activeConversationId)
 
+  // Mid-swap: activeConversationId is set but the conversation ID is still changing (temp → real)
+  // Show a spinner rather than flashing back to the list
+  if (activeConversationId && !activeConv) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
   if (activeConv) {
     return (
       <div className="h-full">

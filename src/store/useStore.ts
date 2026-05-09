@@ -827,13 +827,14 @@ export const useStore = create<AppState>()(
           unreadCount: 0, isPinned: false,
         }
         set(state => ({ conversations: [newConv, ...state.conversations] }))
-        // Persist to Supabase; swap temp ID for real ID when done
         if (isSupabaseReady) {
           dbCreateConversation('group', name, emoji, participantIds).then(realId => {
             set(state => ({
               conversations: state.conversations.map(c =>
                 c.id === tempId ? { ...c, id: realId } : c
               ),
+              // Keep the active conversation pointing at the right ID
+              activeConversationId: state.activeConversationId === tempId ? realId : state.activeConversationId,
             }))
           }).catch(console.warn)
         }
@@ -862,6 +863,7 @@ export const useStore = create<AppState>()(
               conversations: state.conversations.map(c =>
                 c.id === tempId ? { ...c, id: realId } : c
               ),
+              activeConversationId: state.activeConversationId === tempId ? realId : state.activeConversationId,
             }))
           }).catch(console.warn)
         }
