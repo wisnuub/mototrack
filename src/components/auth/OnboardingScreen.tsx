@@ -382,7 +382,7 @@ export default function OnboardingScreen() {
 
   const [loading, setLoading] = useState(false)
 
-  const TOTAL_STEPS = 6  // 0: name, 1: avatar, 2: location, 3: brand, 4: model+year, 5: type+cc+plate
+  const TOTAL_STEPS = 7  // 0: name, 1: avatar, 2: location, 3: permissions, 4: brand, 5: model+year, 6: type+cc+plate
 
   const next = () => { setDir('fwd'); setStep(s => Math.min(s + 1, TOTAL_STEPS - 1)) }
   const back = () => { setDir('back'); setStep(s => Math.max(s - 1, 0)) }
@@ -418,24 +418,27 @@ export default function OnboardingScreen() {
 
   const handleComplete = async (withBike: boolean) => {
     setLoading(true)
-    let firstBike: Omit<Bike, 'id'> | undefined
-    if (withBike && brand.trim() && model.trim()) {
-      firstBike = {
-        riderId: user!.id,
-        brand: brand.trim(),
-        model: model.trim(),
-        year: parseInt(year) || new Date().getFullYear(),
-        type: bikeType,
-        cc: parseInt(cc) || 0,
-        plateNumber: plate.trim(),
-        nickname: `${brand.trim()} ${model.trim()}`,
-        color: '#ff6b35',
-        odometer: 0,
-        isFavorite: true,
+    try {
+      let firstBike: Omit<Bike, 'id'> | undefined
+      if (withBike && brand.trim() && model.trim()) {
+        firstBike = {
+          riderId: user!.id,
+          brand: brand.trim(),
+          model: model.trim(),
+          year: parseInt(year) || new Date().getFullYear(),
+          type: bikeType,
+          cc: parseInt(cc) || 0,
+          plateNumber: plate.trim(),
+          nickname: `${brand.trim()} ${model.trim()}`,
+          color: '#ff6b35',
+          odometer: 0,
+          isFavorite: true,
+        }
       }
+      await completeSetup(name.trim(), avatar, location.trim(), firstBike)
+    } finally {
+      setLoading(false)
     }
-    await completeSetup(name.trim(), avatar, location.trim(), firstBike)
-    setLoading(false)
   }
 
   if (cropSrc) {
@@ -446,7 +449,7 @@ export default function OnboardingScreen() {
   const popularBrands = BIKE_BRANDS
 
   return (
-    <div className="min-h-screen bg-bg-primary flex flex-col overflow-hidden">
+    <div className="h-screen h-dvh bg-bg-primary flex flex-col overflow-hidden">
       {/* Very subtle background gradient */}
       <div className="fixed inset-0 bg-gradient-to-b from-accent/5 via-bg-primary to-bg-primary pointer-events-none" />
 
@@ -587,8 +590,43 @@ export default function OnboardingScreen() {
           </div>
         </Screen>
 
-        {/* ── Step 3: Bike brand ───────────────────────────────── */}
+        {/* ── Step 3: Permissions ──────────────────────────────── */}
         <Screen visible={step === 3}>
+          <div className="flex flex-col items-center justify-center flex-1 px-8 pt-safe h-full">
+            <div className="text-6xl mb-6">🔐</div>
+            <h2 className="text-3xl font-black text-white mb-2 text-center">A few permissions</h2>
+            <p className="text-gray-400 text-sm text-center mb-10">MotoTrack needs these to work properly</p>
+
+            <div className="w-full max-w-xs space-y-3 mb-10">
+              {[
+                { icon: '📍', label: 'Location', desc: 'Share your position with your group', request: async () => { await navigator.geolocation.getCurrentPosition(() => {}, () => {}) } },
+                { icon: '🎙️', label: 'Microphone', desc: 'Push-to-talk voice chat while riding', request: async () => { await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => {}) } },
+                { icon: '📷', label: 'Camera & Media', desc: 'Upload your avatar and ride photos', request: async () => { await navigator.mediaDevices.getUserMedia({ video: true }).catch(() => {}); await (navigator.mediaDevices as any).enumerateDevices?.().catch(() => {}) } },
+              ].map(p => (
+                <button
+                  key={p.label}
+                  onClick={p.request}
+                  className="w-full flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-left hover:bg-white/8 active:scale-95 transition-all"
+                >
+                  <span className="text-2xl">{p.icon}</span>
+                  <div className="flex-1">
+                    <p className="text-white font-semibold text-sm">{p.label}</p>
+                    <p className="text-gray-500 text-xs">{p.desc}</p>
+                  </div>
+                  <span className="text-gray-600 text-xs">Tap →</span>
+                </button>
+              ))}
+            </div>
+
+            <ContinueBtn onClick={next} label="All set →" />
+            <button onClick={next} className="w-full text-gray-600 text-sm py-3 mt-1 hover:text-gray-400 transition-colors">
+              Skip for now
+            </button>
+          </div>
+        </Screen>
+
+        {/* ── Step 4: Bike brand ───────────────────────────────── */}
+        <Screen visible={step === 4}>
           <div className="flex flex-col h-screen pt-safe">
             <div className="text-center pt-12 pb-6 px-6 flex-shrink-0">
               <h2 className="text-3xl font-black text-white mb-2">What do you ride?</h2>
@@ -637,8 +675,8 @@ export default function OnboardingScreen() {
           </div>
         </Screen>
 
-        {/* ── Step 4: Model search + Year ──────────────────────── */}
-        <Screen visible={step === 4}>
+        {/* ── Step 5: Model search + Year ──────────────────────── */}
+        <Screen visible={step === 5}>
           <ModelYearStep
             brand={brand}
             model={model}
@@ -663,8 +701,8 @@ export default function OnboardingScreen() {
           />
         </Screen>
 
-        {/* ── Step 5: Type + CC + Plate ────────────────────────── */}
-        <Screen visible={step === 5}>
+        {/* ── Step 6: Type + CC + Plate ────────────────────────── */}
+        <Screen visible={step === 6}>
           <div className="flex flex-col px-6 pt-safe min-h-screen">
             <div className="text-center pt-14 mb-6">
               <h2 className="text-3xl font-black text-white mb-2">Style & details</h2>

@@ -255,12 +255,16 @@ export const useStore = create<AppState>()(
       completeSetup: async (name, avatar, location, firstBike) => {
         const user = get().user
         if (!user) return
-        if (isSupabaseReady) {
-          await dbUpdateProfile(user.id, name, avatar, location)
-        }
+        // Mark setup complete immediately so the user is never stuck
         set(state => ({ user: { ...state.user!, name, avatar, location }, setupCompletedForUserId: user.id }))
-        if (firstBike) await get().addBike(firstBike)
-        await get().loadUserData(user.id)
+        // Background Supabase sync — failures are non-blocking
+        try {
+          if (isSupabaseReady) await dbUpdateProfile(user.id, name, avatar, location)
+          if (firstBike) await get().addBike(firstBike)
+          await get().loadUserData(user.id)
+        } catch (e) {
+          console.warn('Setup sync error (non-fatal):', e)
+        }
       },
 
       loadUserData: async (userId: string) => {
