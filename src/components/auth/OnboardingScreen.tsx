@@ -236,7 +236,7 @@ export default function OnboardingScreen() {
   }
 
   // Popular brands for picker
-  const popularBrands = BIKE_BRANDS.slice(0, 10)
+  const popularBrands = BIKE_BRANDS
 
   return (
     <div className="min-h-screen bg-bg-primary flex flex-col overflow-hidden">
@@ -358,7 +358,7 @@ export default function OnboardingScreen() {
             <div className="text-7xl mb-8">📍</div>
 
             <div className="text-center mb-12 w-full">
-              <h2 className="text-3xl font-black text-white mb-3">Where do you ride?</h2>
+              <h2 className="text-3xl font-black text-white mb-3">Where are you located?</h2>
               <p className="text-gray-400 text-sm">Helps connect you with local riders</p>
             </div>
 
@@ -399,16 +399,20 @@ export default function OnboardingScreen() {
                       : 'border-white/8 bg-white/4 hover:bg-white/8'
                   }`}
                 >
-                  <div className="w-10 h-10 flex items-center justify-center">
+                  <div className="w-14 h-14 flex items-center justify-center">
                     <img
                       src={b.logoUrl}
                       alt={b.name}
-                      className="w-10 h-10 object-contain"
-                      style={{ filter: 'brightness(0) invert(1)' }}
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      className="w-14 h-14 object-contain"
+                      onError={e => {
+                        const el = e.target as HTMLImageElement
+                        el.style.display = 'none'
+                        el.nextElementSibling?.classList.remove('hidden')
+                      }}
                     />
+                    <span className="hidden text-white text-lg font-black">{b.logoFallback}</span>
                   </div>
-                  <span className="text-white text-xs font-semibold">{b.name}</span>
+                  <span className="text-white text-xs font-semibold leading-tight text-center">{b.name}</span>
                 </button>
               ))}
 
@@ -430,9 +434,8 @@ export default function OnboardingScreen() {
             {brand && (
               <div className="mb-6 opacity-60">
                 <img
-                  src={popularBrands.find(b => b.name === brand)?.logoUrl}
-                  className="h-10 object-contain"
-                  style={{ filter: 'brightness(0) invert(1)' }}
+                  src={BIKE_BRANDS.find(b => b.name === brand)?.logoUrl}
+                  className="h-12 object-contain"
                   onError={e => (e.target as HTMLImageElement).style.display = 'none'}
                 />
               </div>

@@ -33,8 +33,8 @@ export interface ModelInfo {
 
 export interface BrandInfo {
   name: string
-  logoUrl: string       // Wikimedia Commons PNG
-  logoFallback: string  // shown if logoUrl fails
+  logoUrl: string       // local /brands/ svg file
+  logoFallback: string  // text shown if img fails
   country: string
   color: string
   models: ModelInfo[]
@@ -51,7 +51,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── YAMAHA ──────────────────────────────────────────────────────────────────
   {
     name: 'Yamaha',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Yamaha_logo.svg',
+    logoUrl: '/brands/yamaha.svg',
     logoFallback: 'YMH',
     country: 'Japan',
     color: '#003087',
@@ -85,7 +85,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── HONDA ───────────────────────────────────────────────────────────────────
   {
     name: 'Honda',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/7b/Honda_Logo.svg',
+    logoUrl: '/brands/honda.svg',
     logoFallback: 'HND',
     country: 'Japan',
     color: '#CC0000',
@@ -119,7 +119,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── KAWASAKI ─────────────────────────────────────────────────────────────────
   {
     name: 'Kawasaki',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/2/24/Kawasaki_motorcycles_logo.svg',
+    logoUrl: '/brands/kawasaki.svg',
     logoFallback: 'KWS',
     country: 'Japan',
     color: '#009900',
@@ -151,7 +151,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── SUZUKI ──────────────────────────────────────────────────────────────────
   {
     name: 'Suzuki',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/1/12/Suzuki_logo_2.svg',
+    logoUrl: '/brands/suzuki.svg',
     logoFallback: 'SZK',
     country: 'Japan',
     color: '#004B98',
@@ -185,7 +185,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── ROYAL ENFIELD ────────────────────────────────────────────────────────────
   {
     name: 'Royal Enfield',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/9/90/Royal_Enfield_logo.svg',
+    logoUrl: '/brands/royalenfield.svg',
     logoFallback: 'RE',
     country: 'India',
     color: '#8B1A1A',
@@ -203,7 +203,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── KTM ─────────────────────────────────────────────────────────────────────
   {
     name: 'KTM',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/9/9c/KTM_Sportmotorcycle_AG_%28Logo%29.svg',
+    logoUrl: '/brands/ktm.svg',
     logoFallback: 'KTM',
     country: 'Austria',
     color: '#FF6600',
@@ -221,7 +221,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── VESPA ───────────────────────────────────────────────────────────────────
   {
     name: 'Vespa',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/6/6c/Vespa_logo.svg',
+    logoUrl: '/brands/vespa.svg',
     logoFallback: 'VSP',
     country: 'Italy',
     color: '#5C2D91',
@@ -240,7 +240,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── HARLEY-DAVIDSON ──────────────────────────────────────────────────────────
   {
     name: 'Harley-Davidson',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/de/Harley-Davidson_logo.svg',
+    logoUrl: '/brands/harley.svg',
     logoFallback: 'H-D',
     country: 'USA',
     color: '#FF6600',
@@ -264,7 +264,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── BMW MOTORRAD ─────────────────────────────────────────────────────────────
   {
     name: 'BMW Motorrad',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/4/44/BMW.svg',
+    logoUrl: '/brands/bmw.svg',
     logoFallback: 'BMW',
     country: 'Germany',
     color: '#1C69D4',
@@ -286,7 +286,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── DUCATI ───────────────────────────────────────────────────────────────────
   {
     name: 'Ducati',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/f/f4/Ducati_Corse_logo.svg',
+    logoUrl: '/brands/ducati.svg',
     logoFallback: 'DCT',
     country: 'Italy',
     color: '#CC0000',
@@ -306,7 +306,7 @@ export const BIKE_BRANDS: BrandInfo[] = [
   // ── TRIUMPH ──────────────────────────────────────────────────────────────────
   {
     name: 'Triumph',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/0/0d/Triumph_Motorcycles_logo.svg',
+    logoUrl: '/brands/triumph.svg',
     logoFallback: 'TRP',
     country: 'UK',
     color: '#C41E3A',
@@ -318,6 +318,120 @@ export const BIKE_BRANDS: BrandInfo[] = [
       { name: 'Tiger 900',         cc: 888,  type: 'adventure', driveType: 'chain', stroke: '4-stroke', cylinders: 'inline-3',    yearFrom: 2020, yearTo: NOW,  color: '#C41E3A' },
       { name: 'Thruxton 1200',     cc: 1200, type: 'sport',   driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2016, yearTo: NOW,  color: '#C41E3A' },
       { name: 'Bonneville (classic)', cc: 649, type: 'cruiser', driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 1959, yearTo: 1988, color: '#C41E3A' },
+    ],
+  },
+
+  // ── APRILIA ──────────────────────────────────────────────────────────────────
+  {
+    name: 'Aprilia',
+    logoUrl: '/brands/aprilia.svg',
+    logoFallback: 'APR',
+    country: 'Italy',
+    color: '#000000',
+    models: [
+      { name: 'RS 125',        cc: 125,  type: 'sport',     driveType: 'chain', stroke: '2-stroke', cylinders: 'single',        yearFrom: 1992, yearTo: 2012, color: '#000000' },
+      { name: 'RS 250',        cc: 249,  type: 'sport',     driveType: 'chain', stroke: '2-stroke', cylinders: 'v-twin (90°)',  yearFrom: 1994, yearTo: 2004, color: '#000000' },
+      { name: 'RS 660',        cc: 659,  type: 'sport',     driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2020, yearTo: NOW,  color: '#000000' },
+      { name: 'RSV4',          cc: 1099, type: 'sport',     driveType: 'chain', stroke: '4-stroke', cylinders: 'v4',            yearFrom: 2009, yearTo: NOW,  color: '#000000' },
+      { name: 'Tuono V4',      cc: 1077, type: 'naked',     driveType: 'chain', stroke: '4-stroke', cylinders: 'v4',            yearFrom: 2011, yearTo: NOW,  color: '#000000' },
+      { name: 'Dorsoduro 900', cc: 896,  type: 'naked',     driveType: 'chain', stroke: '4-stroke', cylinders: 'v-twin (90°)',  yearFrom: 2017, yearTo: 2021, color: '#000000' },
+      { name: 'Shiver GT',     cc: 896,  type: 'naked',     driveType: 'chain', stroke: '4-stroke', cylinders: 'v-twin (90°)',  yearFrom: 2017, yearTo: 2020, color: '#000000' },
+    ],
+  },
+
+  // ── BENELLI ──────────────────────────────────────────────────────────────────
+  {
+    name: 'Benelli',
+    logoUrl: '/brands/benelli.svg',
+    logoFallback: 'BNL',
+    country: 'Italy',
+    color: '#CC0000',
+    models: [
+      { name: 'TRK 502',   cc: 500,  type: 'adventure', driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2017, yearTo: NOW,  color: '#CC0000' },
+      { name: 'TRK 800',   cc: 754,  type: 'adventure', driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2021, yearTo: NOW,  color: '#CC0000' },
+      { name: 'TNT 600i',  cc: 600,  type: 'naked',     driveType: 'chain', stroke: '4-stroke', cylinders: 'inline-4',      yearFrom: 2012, yearTo: 2018, color: '#CC0000' },
+      { name: 'Leoncino 500', cc: 499, type: 'naked',   driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2017, yearTo: NOW,  color: '#CC0000' },
+      { name: '302S',      cc: 300,  type: 'sport',     driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2016, yearTo: NOW,  color: '#CC0000' },
+      { name: '752S',      cc: 754,  type: 'naked',     driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2019, yearTo: NOW,  color: '#CC0000' },
+    ],
+  },
+
+  // ── CF MOTO ──────────────────────────────────────────────────────────────────
+  {
+    name: 'CF Moto',
+    logoUrl: '/brands/cfmoto.svg',
+    logoFallback: 'CFM',
+    country: 'China',
+    color: '#D4192A',
+    models: [
+      { name: '300NK',    cc: 292,  type: 'naked',     driveType: 'chain', stroke: '4-stroke', cylinders: 'single',        yearFrom: 2016, yearTo: NOW,  color: '#D4192A' },
+      { name: '650NK',    cc: 649,  type: 'naked',     driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2013, yearTo: NOW,  color: '#D4192A' },
+      { name: '700CL-X',  cc: 693,  type: 'naked',     driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2021, yearTo: NOW,  color: '#D4192A' },
+      { name: '800MT',    cc: 799,  type: 'adventure', driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2021, yearTo: NOW,  color: '#D4192A' },
+      { name: '300SR',    cc: 292,  type: 'sport',     driveType: 'chain', stroke: '4-stroke', cylinders: 'single',        yearFrom: 2020, yearTo: NOW,  color: '#D4192A' },
+    ],
+  },
+
+  // ── MOTO GUZZI ───────────────────────────────────────────────────────────────
+  {
+    name: 'Moto Guzzi',
+    logoUrl: '/brands/motoguzzi.svg',
+    logoFallback: 'GUZ',
+    country: 'Italy',
+    color: '#C41E3A',
+    models: [
+      { name: 'V7 Stone',       cc: 853,  type: 'cruiser', driveType: 'shaft', stroke: '4-stroke', cylinders: 'v-twin (90°)', yearFrom: 2021, yearTo: NOW,  color: '#C41E3A' },
+      { name: 'V9 Bobber',      cc: 853,  type: 'cruiser', driveType: 'shaft', stroke: '4-stroke', cylinders: 'v-twin (90°)', yearFrom: 2016, yearTo: NOW,  color: '#C41E3A' },
+      { name: 'V85 TT',         cc: 853,  type: 'adventure', driveType: 'shaft', stroke: '4-stroke', cylinders: 'v-twin (90°)', yearFrom: 2019, yearTo: NOW, color: '#C41E3A' },
+      { name: 'California 1400', cc: 1380, type: 'cruiser', driveType: 'shaft', stroke: '4-stroke', cylinders: 'v-twin (90°)', yearFrom: 2012, yearTo: NOW,  color: '#C41E3A' },
+      { name: 'Griso 1200',      cc: 1151, type: 'naked',   driveType: 'shaft', stroke: '4-stroke', cylinders: 'v-twin (90°)', yearFrom: 2005, yearTo: 2016, color: '#C41E3A' },
+      { name: 'Le Mans',         cc: 844,  type: 'sport',   driveType: 'shaft', stroke: '4-stroke', cylinders: 'v-twin (90°)', yearFrom: 1976, yearTo: 1993, color: '#C41E3A' },
+    ],
+  },
+
+  // ── QJ MOTOR ─────────────────────────────────────────────────────────────────
+  {
+    name: 'QJ Motor',
+    logoUrl: '/brands/qjmotor.svg',
+    logoFallback: 'QJM',
+    country: 'China',
+    color: '#0071C5',
+    models: [
+      { name: 'SRK 600',  cc: 600, type: 'sport',   driveType: 'chain', stroke: '4-stroke', cylinders: 'inline-4', yearFrom: 2022, yearTo: NOW, color: '#0071C5' },
+      { name: 'SRV 550',  cc: 550, type: 'cruiser', driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2022, yearTo: NOW, color: '#0071C5' },
+      { name: 'SRK 700',  cc: 693, type: 'naked',   driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2023, yearTo: NOW, color: '#0071C5' },
+    ],
+  },
+
+  // ── HUSQVARNA ────────────────────────────────────────────────────────────────
+  {
+    name: 'Husqvarna',
+    logoUrl: '/brands/husqvarna.svg',
+    logoFallback: 'HQV',
+    country: 'Sweden',
+    color: '#002855',
+    models: [
+      { name: 'Svartpilen 401',  cc: 373,  type: 'naked',     driveType: 'chain', stroke: '4-stroke', cylinders: 'single', yearFrom: 2019, yearTo: NOW,  color: '#002855' },
+      { name: 'Vitpilen 401',    cc: 373,  type: 'sport',     driveType: 'chain', stroke: '4-stroke', cylinders: 'single', yearFrom: 2018, yearTo: NOW,  color: '#002855' },
+      { name: 'Norden 901',      cc: 889,  type: 'adventure', driveType: 'chain', stroke: '4-stroke', cylinders: 'parallel-twin', yearFrom: 2022, yearTo: NOW, color: '#002855' },
+      { name: 'TE 300i',         cc: 293,  type: 'adventure', driveType: 'chain', stroke: '2-stroke', cylinders: 'single', yearFrom: 2018, yearTo: NOW,  color: '#002855' },
+      { name: 'FE 350',          cc: 350,  type: 'adventure', driveType: 'chain', stroke: '4-stroke', cylinders: 'single', yearFrom: 2013, yearTo: NOW,  color: '#002855' },
+    ],
+  },
+
+  // ── MV AGUSTA ────────────────────────────────────────────────────────────────
+  {
+    name: 'MV Agusta',
+    logoUrl: '/brands/mvagusta.svg',
+    logoFallback: 'MVA',
+    country: 'Italy',
+    color: '#C41E3A',
+    models: [
+      { name: 'Brutale 800',      cc: 798,  type: 'naked',  driveType: 'chain', stroke: '4-stroke', cylinders: 'inline-3',      yearFrom: 2013, yearTo: NOW,  color: '#C41E3A' },
+      { name: 'Brutale 1000',     cc: 998,  type: 'naked',  driveType: 'chain', stroke: '4-stroke', cylinders: 'inline-4',      yearFrom: 2019, yearTo: NOW,  color: '#C41E3A' },
+      { name: 'F3 675',           cc: 675,  type: 'sport',  driveType: 'chain', stroke: '4-stroke', cylinders: 'inline-3',      yearFrom: 2012, yearTo: 2022, color: '#C41E3A' },
+      { name: 'F4',               cc: 998,  type: 'sport',  driveType: 'chain', stroke: '4-stroke', cylinders: 'inline-4',      yearFrom: 1999, yearTo: 2018, color: '#C41E3A' },
+      { name: 'Turismo Veloce 800', cc: 798, type: 'touring', driveType: 'chain', stroke: '4-stroke', cylinders: 'inline-3',   yearFrom: 2015, yearTo: NOW,  color: '#C41E3A' },
     ],
   },
 
