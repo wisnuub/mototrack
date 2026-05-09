@@ -14,6 +14,7 @@ import ExplorePanel from './components/explore/ExplorePanel'
 import GaragePanel from './components/garage/GaragePanel'
 import WeatherPanel from './components/weather/WeatherPanel'
 import ProfileSheet from './components/profile/ProfileSheet'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import type { TabId, BadgeType } from './types'
 
 type RideMode = 'idle' | 'solo' | 'group'
@@ -188,6 +189,9 @@ export default function App() {
 
       {/* Floating music player */}
       <MusicPlayer />
+
+      {/* Vercel Speed Insights */}
+      <SpeedInsights />
     </div>
   )
 }
