@@ -1032,6 +1032,7 @@ function NewGroupModal({ onClose }: { onClose: () => void }) {
   const [emoji, setEmoji] = useState('🏍️')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string[]>([])
+  const [creating, setCreating] = useState(false)
   const EMOJIS = ['🏍️', '🌊', '🌋', '⚡', '🔥', '🎯', '🚀', '🌴', '💨', '🏆', '☀️', '🤙']
 
   const filtered = riders.filter(r =>
@@ -1043,11 +1044,16 @@ function NewGroupModal({ onClose }: { onClose: () => void }) {
   const toggle = (id: string) =>
     setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
 
-  const handle = () => {
-    if (!name.trim()) return
-    const id = createGroupConversation(name.trim(), emoji, [myId, ...selected])
-    setActiveConversation(id)
-    onClose()
+  const handle = async () => {
+    if (!name.trim() || creating) return
+    setCreating(true)
+    try {
+      const id = await createGroupConversation(name.trim(), emoji, [myId, ...selected])
+      await setActiveConversation(id)
+      onClose()
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (
@@ -1126,10 +1132,13 @@ function NewGroupModal({ onClose }: { onClose: () => void }) {
 
         <button
           onClick={handle}
-          disabled={!name.trim()}
-          className="w-full bg-accent text-white font-semibold py-3 rounded-xl disabled:opacity-40"
+          disabled={!name.trim() || creating}
+          className="w-full bg-accent text-white font-semibold py-3 rounded-xl disabled:opacity-40 flex items-center justify-center gap-2"
         >
-          Create Group {selected.length > 0 ? `· ${selected.length + 1} members` : ''}
+          {creating
+            ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Creating…</>
+            : <>Create Group {selected.length > 0 ? `· ${selected.length + 1} members` : ''}</>
+          }
         </button>
       </div>
     </div>
@@ -1160,9 +1169,9 @@ function PeopleSheet({ onClose }: { onClose: () => void }) {
   const followingRiders = allRiders.filter(r => following.includes(r.id))
   const list = tab === 'following' ? followingRiders : filtered
 
-  const message = (r: typeof riders[0]) => {
-    const id = createDmConversation(r.id, r.name, r.avatar)
-    setActiveConversation(id)
+  const message = async (r: typeof riders[0]) => {
+    const id = await createDmConversation(r.id, r.name, r.avatar)
+    await setActiveConversation(id)
     onClose()
   }
 

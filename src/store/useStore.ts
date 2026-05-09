@@ -131,8 +131,8 @@ interface AppState {
   sendMessage: (convId: string, content: string, type?: ChatMessage['type'], extra?: Partial<ChatMessage>) => Promise<void>
   markRead: (convId: string) => void
   addReaction: (messageId: string, emoji: string, userId: string) => void
-  createGroupConversation: (name: string, emoji: string, participantIds: string[]) => string
-  createDmConversation: (riderId: string, riderName: string, riderAvatar: string) => string
+  createGroupConversation: (name: string, emoji: string, participantIds: string[]) => Promise<string>
+  createDmConversation: (riderId: string, riderName: string, riderAvatar: string) => Promise<string>
 
   // Voice channel
   voiceConvId: string | null
@@ -819,55 +819,30 @@ export const useStore = create<AppState>()(
         }))
       },
 
-      createGroupConversation: (name, emoji, participantIds) => {
-        const tempId = `conv-${Date.now()}`
-        const newConv: Conversation = {
-          id: tempId, type: 'group', name, emoji,
-          participantIds,
-          unreadCount: 0, isPinned: false,
-        }
-        set(state => ({ conversations: [newConv, ...state.conversations] }))
+      createGroupConversation: async (name, emoji, participantIds) => {
+        let id = `conv-${Date.now()}`
         if (isSupabaseReady) {
-          dbCreateConversation('group', name, emoji, participantIds).then(realId => {
-            set(state => ({
-              conversations: state.conversations.map(c =>
-                c.id === tempId ? { ...c, id: realId } : c
-              ),
-              // Keep the active conversation pointing at the right ID
-              activeConversationId: state.activeConversationId === tempId ? realId : state.activeConversationId,
-            }))
-          }).catch(console.warn)
+          try { id = await dbCreateConversation('group', name, emoji, participantIds) } catch (e) { console.warn('createGroupConversation DB failed, using local ID', e) }
         }
-        return tempId
+        const newConv: Conversation = { id, type: 'group', name, emoji, participantIds, unreadCount: 0, isPinned: false }
+        set(state => ({ conversations: [newConv, ...state.conversations] }))
+        return id
       },
 
-      createDmConversation: (riderId, riderName, riderAvatar) => {
+      createDmConversation: async (riderId, riderName, riderAvatar) => {
         const user = get().user
         const myId = user?.id ?? 'rider-1'
         const existing = get().conversations.find(
           c => c.type === 'dm' && c.participantIds.includes(riderId) && c.participantIds.includes(myId)
         )
         if (existing) return existing.id
-        const tempId = `conv-${Date.now()}`
-        const newConv: Conversation = {
-          id: tempId, type: 'dm',
-          name: riderName,
-          emoji: riderAvatar,
-          participantIds: [myId, riderId],
-          unreadCount: 0, isPinned: false,
-        }
-        set(state => ({ conversations: [newConv, ...state.conversations] }))
+        let id = `conv-${Date.now()}`
         if (isSupabaseReady) {
-          dbCreateConversation('dm', riderName, riderAvatar, [myId, riderId]).then(realId => {
-            set(state => ({
-              conversations: state.conversations.map(c =>
-                c.id === tempId ? { ...c, id: realId } : c
-              ),
-              activeConversationId: state.activeConversationId === tempId ? realId : state.activeConversationId,
-            }))
-          }).catch(console.warn)
+          try { id = await dbCreateConversation('dm', riderName, riderAvatar, [myId, riderId]) } catch (e) { console.warn('createDmConversation DB failed, using local ID', e) }
         }
-        return tempId
+        const newConv: Conversation = { id, type: 'dm', name: riderName, emoji: riderAvatar, participantIds: [myId, riderId], unreadCount: 0, isPinned: false }
+        set(state => ({ conversations: [newConv, ...state.conversations] }))
+        return id
       },
 
       // Voice channel
