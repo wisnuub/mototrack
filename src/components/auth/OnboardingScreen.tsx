@@ -382,13 +382,14 @@ export default function OnboardingScreen() {
 
         {/* ── Step 3: Bike brand ───────────────────────────────── */}
         <Screen visible={step === 3}>
-          <div className="flex flex-col px-6 pt-safe min-h-screen">
-            <div className="text-center pt-16 mb-8">
+          <div className="flex flex-col h-screen pt-safe">
+            <div className="text-center pt-12 pb-6 px-6 flex-shrink-0">
               <h2 className="text-3xl font-black text-white mb-2">What do you ride?</h2>
               <p className="text-gray-400 text-sm">Pick your motorcycle brand</p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 flex-1 pb-4">
+            <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-8">
+            <div className="grid grid-cols-3 gap-3">
               {popularBrands.map(b => (
                 <button
                   key={b.name}
@@ -424,6 +425,7 @@ export default function OnboardingScreen() {
                 <span className="text-3xl">🏍️</span>
                 <span className="text-gray-400 text-xs font-semibold">Other</span>
               </button>
+            </div>
             </div>
           </div>
         </Screen>
