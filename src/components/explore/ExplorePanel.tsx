@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useStore } from '../../store/useStore'
-import { Heart, Bookmark, MapPin, Clock, Zap, Users, Eye, EyeOff, Star, ChevronRight, ExternalLink, Ticket, ShoppingBag, X } from 'lucide-react'
+import { Heart, Bookmark, MapPin, Clock, Zap, Users, Eye, EyeOff, Star, ChevronRight, ExternalLink, Ticket, ShoppingBag, X, Globe, Lock } from 'lucide-react'
 import type { TripTemplate, Attraction, MotoEvent, ShopProduct, CommunityMod, BadgeType, InstagramPost, InstagramAccount } from '../../types'
-import { MOCK_ATTRACTIONS, MOCK_COMMUNITY_MODS } from '../../data/mockData'
+import { MOCK_ATTRACTIONS, MOCK_COMMUNITY_MODS, RIDE_HISTORY } from '../../data/mockData'
 import EventsMapPanel from './EventsMapPanel'
 import { formatDistanceToNow, format } from 'date-fns'
 import { fetchPlaceDetails, isPlacesReady } from '../../lib/places'
@@ -10,13 +10,7 @@ import type { PlaceDetails } from '../../lib/places'
 
 // ─── Ride History ──────────────────────────────────────────────────────────────
 
-const RIDE_HISTORY = [
-  { id: 'rh1', title: 'Kintamani Sunrise Ride', date: new Date('2024-04-10T05:30:00'), distanceKm: 68.4, durationMin: 185, avgSpeedKmh: 58, maxSpeedKmh: 87, weather: 'Partly cloudy, 22°C', traffic: 'Light', riders: ['Sato', 'Rizal', 'Iqbal'], isPrivate: false, route: 'Jimbaran → Denpasar → Ubud → Kintamani', emoji: '🌋' },
-  { id: 'rh2', title: 'Solo Morning Run — Uluwatu', date: new Date('2024-04-07T06:00:00'), distanceKm: 41.2, durationMin: 70, avgSpeedKmh: 64, maxSpeedKmh: 92, weather: 'Clear, 28°C', traffic: 'Very light', riders: [], isPrivate: true, route: 'Jimbaran → Pecatu → Uluwatu', emoji: '🌊' },
-  { id: 'rh3', title: 'Tanah Lot Sunset Group Run', date: new Date('2024-04-03T15:00:00'), distanceKm: 38.9, durationMin: 95, avgSpeedKmh: 52, maxSpeedKmh: 78, weather: 'Sunny, 31°C', traffic: 'Moderate', riders: ['Sato', 'Wayan'], isPrivate: false, route: 'Denpasar → Tabanan → Tanah Lot', emoji: '🌅' },
-]
-
-type ExploreTab = 'discover' | 'events' | 'shop' | 'routes' | 'feed' | 'brands'
+type ExploreTab = 'discover' | 'events' | 'shop' | 'routes' | 'brands'
 
 // ─── Brand badge config ──────────────────────────────────────────────────────
 
@@ -797,21 +791,223 @@ function SectionHeader({ title, sub, onSeeAll }: { title: string; sub?: string; 
 
 // ─── TripCard ────────────────────────────────────────────────────────────────
 
-function TripCard({ trip, saved, onLike, onSave }: { trip: TripTemplate; saved: boolean; onLike: () => void; onSave: () => void }) {
-  const diffColors = { easy: 'bg-moto-green/20 text-moto-green', moderate: 'bg-accent-amber/20 text-accent-amber', hard: 'bg-moto-red/20 text-moto-red' }
+// ─── Route Detail Sheet ───────────────────────────────────────────────────────
+
+const DIFF_COLORS = {
+  easy: 'bg-moto-green/20 text-moto-green',
+  moderate: 'bg-accent-amber/20 text-accent-amber',
+  hard: 'bg-moto-red/20 text-moto-red',
+}
+
+const WAYPOINT_ICONS: Record<string, string> = {
+  attraction: '🌄', fuel: '⛽', food: '🍽️', rest: '☕', photo: '📸',
+}
+
+const ROUTE_REACTIONS = ['❤️', '🔥', '👍', '🏍️', '⭐']
+
+function routeSvgPath(pts: { lat: number; lng: number }[], w: number, h: number, pad = 10): string {
+  if (pts.length < 2) return ''
+  const lats = pts.map(p => p.lat), lngs = pts.map(p => p.lng)
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats)
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
+  const latR = maxLat - minLat || 0.001, lngR = maxLng - minLng || 0.001
+  return pts.map(({ lat, lng }, i) => {
+    const x = (pad + ((lng - minLng) / lngR) * (w - pad * 2)).toFixed(1)
+    const y = ((h - pad) - ((lat - minLat) / latR) * (h - pad * 2)).toFixed(1)
+    return `${i === 0 ? 'M' : 'L'}${x},${y}`
+  }).join(' ')
+}
+
+function RouteDetailSheet({
+  trip,
+  saved,
+  onSave,
+  onClose,
+  onShowOnMap,
+  onRideSolo,
+}: {
+  trip: TripTemplate
+  saved: boolean
+  onSave: () => void
+  onClose: () => void
+  onShowOnMap: (trip: TripTemplate) => void
+  onRideSolo: (trip: TripTemplate) => void
+}) {
+  const [isPublic, setIsPublic] = useState(true)
+  const [reactions, setReactions] = useState<Record<string, number>>(() => ({
+    '❤️': trip.likes, '🔥': Math.floor(trip.likes * 0.6), '👍': Math.floor(trip.saves * 1.2),
+    '🏍️': Math.floor(trip.saves * 0.8), '⭐': Math.floor(trip.likes * 0.4),
+  }))
+  const [myReactions, setMyReactions] = useState<Set<string>>(new Set())
+  const path = routeSvgPath(trip.route, 280, 100)
+  const first = trip.route[0], last = trip.route[trip.route.length - 1]
+
+  const toggleReaction = (emoji: string) => {
+    setMyReactions(prev => {
+      const next = new Set(prev)
+      if (next.has(emoji)) { next.delete(emoji); setReactions(r => ({ ...r, [emoji]: r[emoji] - 1 })) }
+      else { next.add(emoji); setReactions(r => ({ ...r, [emoji]: r[emoji] + 1 })) }
+      return next
+    })
+  }
+
+  const handleShare = async () => {
+    const text = `🏍️ ${trip.title}\n📏 ${trip.distanceKm} km · ~${trip.estimatedHours}h · ${trip.difficulty}\n📍 ${trip.region}\n#MotoTrack`
+    if (navigator.share) await navigator.share({ title: trip.title, text }).catch(() => {})
+    else await navigator.clipboard.writeText(text).catch(() => {})
+  }
+
   return (
-    <div className="bg-bg-card rounded-2xl border border-white/5 p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-bg-secondary rounded-t-3xl w-full max-w-lg animate-slide-up overflow-hidden max-h-[92vh] flex flex-col">
+
+        {/* Route mini-map header */}
+        <div className="relative flex-shrink-0 bg-bg-card h-28 overflow-hidden">
+          <svg viewBox="0 0 280 100" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+            <path d={path} fill="none" stroke="#ff6b35" strokeWidth="6" strokeOpacity="0.15" strokeLinecap="round" strokeLinejoin="round" />
+            <path d={path} fill="none" stroke="#ff6b35" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            {first && last && (
+              <>
+                <circle cx={parseFloat(path.slice(1).split('L')[0].split(',')[0])} cy={parseFloat(path.slice(1).split('L')[0].split(',')[1])} r="5" fill="#30d158" />
+                <circle cx={parseFloat(path.split('L').pop()!.split(',')[0])} cy={parseFloat(path.split('L').pop()!.split(',')[1])} r="5" fill="#ff453a" />
+              </>
+            )}
+          </svg>
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-bg-secondary" />
+          <button onClick={onClose} className="absolute top-3 right-3 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white backdrop-blur-sm">
+            <X size={16} />
+          </button>
+          {/* Public/Private toggle */}
+          <button
+            onClick={() => setIsPublic(p => !p)}
+            className={`absolute top-3 left-3 flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full backdrop-blur-sm ${
+              isPublic ? 'bg-moto-green/20 text-moto-green border border-moto-green/30' : 'bg-gray-600/30 text-gray-400 border border-white/10'
+            }`}
+          >
+            {isPublic ? <><Globe size={11} /> Public</> : <><Lock size={11} /> Private</>}
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-5 pb-8 pt-1">
+          {/* Header */}
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex-1 pr-3">
+              <h3 className="text-white font-bold text-xl leading-tight">{trip.title}</h3>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${DIFF_COLORS[trip.difficulty]}`}>{trip.difficulty}</span>
+                <span className="text-gray-400 text-xs">{trip.distanceKm} km</span>
+                <span className="text-gray-600 text-xs">·</span>
+                <span className="text-gray-400 text-xs">~{trip.estimatedHours}h</span>
+                <span className="text-gray-600 text-xs">·</span>
+                <span className="text-gray-400 text-xs">{trip.region}</span>
+              </div>
+            </div>
+            <button onClick={onSave} className={`p-2 rounded-xl flex-shrink-0 ${saved ? 'bg-accent/20 text-accent' : 'bg-bg-card text-gray-400'}`}>
+              <Bookmark size={18} fill={saved ? 'currentColor' : 'none'} />
+            </button>
+          </div>
+
+          <p className="text-gray-300 text-sm leading-relaxed mb-4">{trip.description}</p>
+
+          {/* Emoji reactions */}
+          <div className="flex items-center gap-2 mb-5 flex-wrap">
+            {ROUTE_REACTIONS.map(emoji => (
+              <button
+                key={emoji}
+                onClick={() => toggleReaction(emoji)}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-90 ${
+                  myReactions.has(emoji)
+                    ? 'bg-accent/20 border border-accent/40 text-white'
+                    : 'bg-bg-card border border-white/10 text-gray-300'
+                }`}
+              >
+                {emoji} <span className="text-xs text-gray-400">{reactions[emoji]}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Tags */}
+          <div className="flex gap-2 flex-wrap mb-5">
+            {trip.tags.slice(0, 5).map(tag => (
+              <span key={tag} className="text-xs text-accent bg-accent/10 px-2 py-0.5 rounded-full">#{tag}</span>
+            ))}
+          </div>
+
+          {/* Waypoints */}
+          {trip.waypoints.length > 0 && (
+            <div className="mb-5">
+              <p className="text-white font-semibold text-sm mb-3">Waypoints</p>
+              <div className="space-y-2">
+                {trip.waypoints.map((wp, i) => (
+                  <div key={i} className="flex items-center gap-3 bg-bg-card rounded-xl px-3 py-2.5 border border-white/5">
+                    <span className="text-lg flex-shrink-0">{WAYPOINT_ICONS[wp.type] ?? '📍'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-xs font-semibold truncate">{wp.name}</p>
+                      <p className="text-gray-500 text-[10px] truncate">{wp.description}</p>
+                    </div>
+                    <span className="text-gray-600 text-[10px] capitalize flex-shrink-0">{wp.type}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Author */}
+          <div className="flex items-center gap-2 mb-5">
+            <span className="text-xl">{trip.authorAvatar}</span>
+            <span className="text-gray-400 text-xs">by {trip.authorName}</span>
+            <span className="text-gray-600 text-xs ml-auto">{trip.likes} likes · {trip.saves} saves</span>
+          </div>
+
+          {/* Action buttons */}
+          <div className="grid grid-cols-3 gap-2.5">
+            <button
+              onClick={() => { onShowOnMap(trip); onClose() }}
+              className="flex flex-col items-center gap-1.5 bg-bg-card border border-white/10 text-white py-3 rounded-2xl text-xs font-semibold active:scale-95 transition-all"
+            >
+              <span className="text-xl">🗺️</span> Show Map
+            </button>
+            <button
+              onClick={handleShare}
+              className="flex flex-col items-center gap-1.5 bg-bg-card border border-white/10 text-white py-3 rounded-2xl text-xs font-semibold active:scale-95 transition-all"
+            >
+              <span className="text-xl">↗️</span> Share
+            </button>
+            <button
+              onClick={() => { onRideSolo(trip); onClose() }}
+              className="flex flex-col items-center gap-1.5 bg-moto-green text-white py-3 rounded-2xl text-xs font-bold active:scale-95 transition-all"
+            >
+              <span className="text-xl">🏍️</span> Ride Solo
+            </button>
+          </div>
+          <div className="h-2 pb-safe" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Trip card (route list item) ──────────────────────────────────────────────
+
+function TripCard({ trip, saved, onLike, onSave, onClick }: {
+  trip: TripTemplate; saved: boolean; onLike: () => void; onSave: () => void; onClick: () => void
+}) {
+  return (
+    <button onClick={onClick} className="w-full bg-bg-card rounded-2xl border border-white/5 p-4 text-left active:scale-[0.98] transition-all">
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 pr-3">
           <p className="text-white font-semibold text-sm mb-1">{trip.title}</p>
           <p className="text-gray-500 text-xs line-clamp-2">{trip.description}</p>
         </div>
-        <button onClick={onSave} className={`p-2 rounded-xl transition-all ${saved ? 'bg-accent/20 text-accent' : 'bg-bg-surface text-gray-400'}`}>
+        <button onClick={e => { e.stopPropagation(); onSave() }}
+          className={`p-2 rounded-xl transition-all flex-shrink-0 ${saved ? 'bg-accent/20 text-accent' : 'bg-bg-surface text-gray-400'}`}>
           <Bookmark size={16} fill={saved ? 'currentColor' : 'none'} />
         </button>
       </div>
       <div className="flex flex-wrap gap-2 mb-3">
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${diffColors[trip.difficulty]}`}>{trip.difficulty}</span>
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DIFF_COLORS[trip.difficulty]}`}>{trip.difficulty}</span>
         <span className="text-xs px-2 py-0.5 rounded-full bg-bg-surface text-gray-400">{trip.distanceKm} km</span>
         <span className="text-xs px-2 py-0.5 rounded-full bg-bg-surface text-gray-400">~{trip.estimatedHours}h</span>
         <span className="text-xs px-2 py-0.5 rounded-full bg-bg-surface text-gray-400">{trip.region}</span>
@@ -827,14 +1023,13 @@ function TripCard({ trip, saved, onLike, onSave }: { trip: TripTemplate; saved: 
           <span className="text-gray-400 text-xs">{trip.authorName}</span>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={onLike} className="flex items-center gap-1 text-gray-400 hover:text-moto-red transition-colors">
-            <Heart size={14} />
-            <span className="text-xs">{trip.likes}</span>
+          <button onClick={e => { e.stopPropagation(); onLike() }} className="flex items-center gap-1 text-gray-400">
+            <Heart size={14} /><span className="text-xs">{trip.likes}</span>
           </button>
           <span className="text-gray-500 text-xs">{trip.saves} saves</span>
         </div>
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -1129,6 +1324,7 @@ export default function ExplorePanel() {
   const [selectedEvent, setSelectedEvent] = useState<MotoEvent | null>(null)
   const [selectedAttraction, setSelectedAttraction] = useState<Attraction | null>(null)
   const [selectedMod, setSelectedMod]   = useState<CommunityMod | null>(null)
+  const [selectedTrip, setSelectedTrip] = useState<TripTemplate | null>(null)
   const [igFilter, setIgFilter]         = useState<string | null>(null)
   const tripTemplates       = useStore(s => s.tripTemplates)
   const savedTripIds        = useStore(s => s.savedTripIds)
@@ -1141,8 +1337,24 @@ export default function ExplorePanel() {
   const instagramPosts      = useStore(s => s.instagramPosts)
 
   const handleShowOnMap = (attraction: Attraction) => {
-    // Store the target in localStorage so RideMap can pick it up (simple cross-component comms)
     localStorage.setItem('mototrack-map-target', JSON.stringify({ lat: attraction.position.lat, lng: attraction.position.lng, name: attraction.name }))
+    setActiveTab('map')
+  }
+
+  const handleShowRouteOnMap = (trip: TripTemplate) => {
+    if (trip.waypoints.length > 0) {
+      const wp = trip.waypoints[0]
+      localStorage.setItem('mototrack-map-target', JSON.stringify({ lat: wp.position.lat, lng: wp.position.lng, name: trip.title }))
+    } else if (trip.route.length > 0) {
+      const pt = trip.route[0]
+      localStorage.setItem('mototrack-map-target', JSON.stringify({ lat: pt.lat, lng: pt.lng, name: trip.title }))
+    }
+    setActiveTab('map')
+  }
+
+  const handleRideSolo = (trip: TripTemplate) => {
+    const destinations = trip.waypoints.map(wp => wp.name)
+    localStorage.setItem('mototrack-launch-route', JSON.stringify({ destinations }))
     setActiveTab('map')
   }
 
@@ -1152,8 +1364,7 @@ export default function ExplorePanel() {
     { id: 'shop',     label: 'Shop',     icon: '🛒' },
     { id: 'routes',   label: 'Routes',   icon: '🗺️' },
     { id: 'brands',   label: 'Brands',   icon: '📸' },
-    { id: 'feed',     label: 'My Rides', icon: '📊' },
-  ]
+    ]
 
   const topAttractions    = [...MOCK_ATTRACTIONS].sort((a, b) => b.rating - a.rating).slice(0, 6)
   const upcomingEvents    = events.filter(e => e.date > new Date()).sort((a, b) => a.date.getTime() - b.date.getTime())
@@ -1279,7 +1490,8 @@ export default function ExplorePanel() {
             <div className="space-y-3">
               {tripTemplates.map(trip => (
                 <TripCard key={trip.id} trip={trip} saved={savedTripIds.includes(trip.id)}
-                  onLike={() => likeTrip(trip.id)} onSave={() => saveTrip(trip.id)} />
+                  onLike={() => likeTrip(trip.id)} onSave={() => saveTrip(trip.id)}
+                  onClick={() => setSelectedTrip(trip)} />
               ))}
             </div>
             <div className="mt-6">
@@ -1358,16 +1570,6 @@ export default function ExplorePanel() {
           </div>
         )}
 
-        {/* ── MY RIDES TAB ── */}
-        {tab === 'feed' && (
-          <>
-            <p className="text-gray-500 text-xs mb-3">Your completed rides · Tap the eye to hide from friends</p>
-            <div className="space-y-3">
-              {RIDE_HISTORY.map(ride => <RideFeedCard key={ride.id} ride={ride} />)}
-            </div>
-          </>
-        )}
-
       </div>
 
       {/* Event detail modal */}
@@ -1386,9 +1588,18 @@ export default function ExplorePanel() {
 
       {/* Mod detail sheet */}
       {selectedMod && (
-        <ModDetailSheet
-          mod={selectedMod}
-          onClose={() => setSelectedMod(null)}
+        <ModDetailSheet mod={selectedMod} onClose={() => setSelectedMod(null)} />
+      )}
+
+      {/* Route detail sheet */}
+      {selectedTrip && (
+        <RouteDetailSheet
+          trip={selectedTrip}
+          saved={savedTripIds.includes(selectedTrip.id)}
+          onSave={() => saveTrip(selectedTrip.id)}
+          onClose={() => setSelectedTrip(null)}
+          onShowOnMap={handleShowRouteOnMap}
+          onRideSolo={handleRideSolo}
         />
       )}
     </div>

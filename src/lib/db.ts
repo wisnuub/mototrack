@@ -51,6 +51,23 @@ export async function dbUpdateProfile(userId: string, name: string, avatar: stri
   await supabase.from('profiles').upsert({ id: userId, name, avatar, location })
 }
 
+export async function dbSetUsername(userId: string, username: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('profiles').update({ username: username.toLowerCase().replace(/[^a-z0-9_]/g, '') }).eq('id', userId)
+  if (error?.code === '23505') return { error: 'Username already taken' }
+  return { error: error ? error.message : null }
+}
+
+export async function dbFindUsersByUsername(query: string): Promise<{ id: string; name: string; avatar: string; username: string }[]> {
+  if (!query.trim()) return []
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, name, avatar, username')
+    .ilike('username', `%${query.trim()}%`)
+    .not('username', 'is', null)
+    .limit(10)
+  return data ?? []
+}
+
 export async function dbUploadAvatar(userId: string, file: File): Promise<string> {
   const ext = file.name.split('.').pop() ?? 'jpg'
   const path = `${userId}.${ext}`

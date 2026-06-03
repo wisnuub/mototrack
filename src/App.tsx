@@ -377,6 +377,23 @@ export default function App() {
   const [showLauncher, setShowLauncher] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
 
+  // Back-button navigation: push a history entry on each tab change so the
+  // browser/OS back gesture goes to the previous tab rather than closing the app
+  useEffect(() => {
+    history.pushState({ tab: activeTab }, '', `#${activeTab}`)
+  }, [activeTab])
+
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      if (showProfile) { setShowProfile(false); return }
+      if (showLauncher) { setShowLauncher(false); return }
+      const tab = e.state?.tab
+      if (tab) setActiveTab(tab)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [showProfile, showLauncher])
+
   // Handle Supabase OAuth redirect (Google sign-in)
   useEffect(() => {
     if (!isSupabaseReady) return
@@ -393,6 +410,7 @@ export default function App() {
             name: profile?.name ?? sbUser.user_metadata?.full_name ?? sbUser.email!.split('@')[0],
             email: sbUser.email!,
             avatar: profile?.avatar ?? '🤙',
+            username: profile?.username ?? undefined,
             provider: sbUser.app_metadata?.provider === 'google' ? 'google' : 'email',
             badges: (profile?.badges ?? adminProfile.badges) as BadgeType[],
             ...(adminProfile.isAdmin ? { isAdmin: true } : {}),
@@ -425,6 +443,20 @@ export default function App() {
     setShowLauncher(false)
     if (mode !== 'idle') setActiveTab('map')
   }
+
+  // Auto-launch a routed solo ride when Explore's "Ride Solo" stores destinations in localStorage
+  useEffect(() => {
+    if (activeTab !== 'map') return
+    const raw = localStorage.getItem('mototrack-launch-route')
+    if (!raw) return
+    localStorage.removeItem('mototrack-launch-route')
+    try {
+      const { destinations } = JSON.parse(raw) as { destinations: string[] }
+      if (destinations.length > 0) {
+        handleStartRide('solo', 'routed', destinations.map((name, i) => ({ id: `rt-${i}`, name })))
+      }
+    } catch {}
+  }, [activeTab])
 
   return (
     <div className="flex flex-col h-screen h-dvh bg-bg-primary overflow-hidden">

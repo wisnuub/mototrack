@@ -29,6 +29,12 @@ export const ULUWATU_ROUTE = [
   { lat: -8.8660, lng: 115.0850 }, // Uluwatu Temple
 ]
 
+export const RIDE_HISTORY = [
+  { id: 'rh1', title: 'Kintamani Sunrise Ride', date: new Date('2024-04-10T05:30:00'), distanceKm: 68.4, durationMin: 185, avgSpeedKmh: 58, maxSpeedKmh: 87, weather: 'Partly cloudy, 22°C', traffic: 'Light', riders: ['Sato', 'Rizal', 'Iqbal'], isPrivate: false, route: 'Jimbaran → Denpasar → Ubud → Kintamani', emoji: '🌋' },
+  { id: 'rh2', title: 'Solo Morning Run — Uluwatu', date: new Date('2024-04-07T06:00:00'), distanceKm: 41.2, durationMin: 70, avgSpeedKmh: 64, maxSpeedKmh: 92, weather: 'Clear, 28°C', traffic: 'Very light', riders: [], isPrivate: true, route: 'Jimbaran → Pecatu → Uluwatu', emoji: '🌊' },
+  { id: 'rh3', title: 'Tanah Lot Sunset Group Run', date: new Date('2024-04-03T15:00:00'), distanceKm: 38.9, durationMin: 95, avgSpeedKmh: 52, maxSpeedKmh: 78, weather: 'Sunny, 31°C', traffic: 'Moderate', riders: ['Sato', 'Wayan'], isPrivate: false, route: 'Denpasar → Tabanan → Tanah Lot', emoji: '🌅' },
+]
+
 export const MOCK_RIDERS: Rider[] = [
   {
     id: 'rider-1',

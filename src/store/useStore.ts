@@ -22,6 +22,7 @@ export interface AuthUser {
   name: string
   email: string
   avatar: string
+  username?: string
   provider: 'email' | 'google'
   location?: string
   badges?: BadgeType[]
@@ -193,6 +194,7 @@ export const useStore = create<AppState>()(
               name: profile?.name ?? email.split('@')[0],
               email: sbUser.email!,
               avatar: profile?.avatar ?? '🤙',
+              username: profile?.username ?? undefined,
               provider: 'email',
             }
             set({ user, isAuthLoading: false })

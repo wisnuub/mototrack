@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
-import { X, Plus, Lock, Globe, Trash2, ImageIcon, MapPin, Heart, Clock, Zap, Route, ChevronDown, Shield, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react'
+import { X, Plus, Lock, Globe, Trash2, ImageIcon, MapPin, Heart, Clock, Zap, Route, ChevronDown, Shield, CheckCircle, AlertCircle, ExternalLink, Eye, EyeOff, Ticket } from 'lucide-react'
 import { format, formatDistanceToNow, formatDuration, intervalToDuration } from 'date-fns'
 import { useStore } from '../../store/useStore'
 import type { ActivityPost, ActivityType, BadgeType, RideSession } from '../../types'
 import { isSupabaseReady } from '../../lib/supabase'
+import { RIDE_HISTORY } from '../../data/mockData'
 import {
   dbApplyForBadge, dbGetBadgeApplications, dbReviewBadgeApplication, dbBanUser,
+  dbSetUsername,
   type BadgeApplication,
 } from '../../lib/db'
 
@@ -632,7 +634,7 @@ function RideSessionCard({ session }: { session: RideSession }) {
 
 // ── Profile Sheet ───────────────────────────────────────────────
 
-type ProfileTab = 'posts' | 'rides' | 'service'
+type ProfileTab = 'posts' | 'myrides' | 'service' | 'events'
 
 export default function ProfileSheet({ onClose }: { onClose: () => void }) {
   const user = useStore(s => s.user)
@@ -644,6 +646,8 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
   const stopRideSession = useStore(s => s.stopRideSession)
 
   const [tab, setTab] = useState<ProfileTab>('posts')
+  const eventInteractions = useStore(s => s.eventInteractions)
+  const events = useStore(s => s.events)
   const [showCreate, setShowCreate] = useState(false)
   const [showBadgeApply, setShowBadgeApply] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
@@ -699,6 +703,10 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
             </div>
             <div className="flex-1 min-w-0 pt-1">
               <p className="text-white font-bold text-xl leading-tight">{user?.name ?? 'Rider'}</p>
+              {user?.username
+                ? <p className="text-accent text-sm font-semibold mt-0.5">@{user.username}</p>
+                : <UsernameSetup />
+              }
               {user?.location && <p className="text-gray-500 text-sm flex items-center gap-1 mt-0.5"><MapPin size={11} />{user.location}</p>}
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {user?.badges?.map(b => <BadgeChip key={b} badge={b} />)}
@@ -734,16 +742,21 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-white/10 px-4">
-          {(['posts', 'rides', 'service'] as ProfileTab[]).map(t => (
+        <div className="flex border-b border-white/10 px-2 overflow-x-auto no-scrollbar">
+          {([
+            { id: 'posts',   label: 'Posts'    },
+            { id: 'myrides', label: 'My Rides' },
+            { id: 'service', label: 'Service'  },
+            { id: 'events',  label: 'Events'   },
+          ] as { id: ProfileTab; label: string }[]).map(t => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`flex-1 py-3 text-sm font-semibold capitalize transition-colors ${
-                tab === t ? 'text-white border-b-2 border-accent' : 'text-gray-500'
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex-shrink-0 px-4 py-3 text-sm font-semibold transition-colors whitespace-nowrap ${
+                tab === t.id ? 'text-white border-b-2 border-accent' : 'text-gray-500'
               }`}
             >
-              {t}
+              {t.label}
             </button>
           ))}
         </div>
@@ -764,53 +777,147 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
               : myServices.map(p => <ActivityPostCard key={p.id} post={p} showDelete />)
           )}
 
-          {tab === 'rides' && (
-            <div className="space-y-4">
-              {/* Active ride banner */}
-              {activeRideSession ? (
-                <div className="bg-green-400/10 border border-green-400/30 rounded-2xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                      <p className="text-green-400 font-bold text-sm">Ride in Progress</p>
+          {tab === 'myrides' && (() => {
+            const [ridePivacy, setRidePrivacy] = useState<Record<string, boolean>>({})
+            return (
+              <div className="space-y-3">
+                {/* Live session banner */}
+                {activeRideSession && (
+                  <div className="bg-green-400/10 border border-green-400/30 rounded-2xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                        <p className="text-green-400 font-bold text-sm">Ride in Progress</p>
+                      </div>
+                      <button onClick={stopRideSession} className="bg-moto-red/20 text-moto-red text-xs font-semibold px-3 py-1.5 rounded-full">Stop</button>
                     </div>
-                    <button
-                      onClick={stopRideSession}
-                      className="bg-moto-red/20 text-moto-red text-xs font-semibold px-3 py-1.5 rounded-full"
-                    >
-                      Stop
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <p className="text-white font-bold">{activeRideSession.distanceKm.toFixed(2)}</p>
-                      <p className="text-gray-500 text-xs">km</p>
-                    </div>
-                    <div>
-                      <p className="text-white font-bold">{activeRideSession.maxSpeedKmh}</p>
-                      <p className="text-gray-500 text-xs">top km/h</p>
-                    </div>
-                    <div>
-                      <p className="text-white font-bold">{activeRideSession.route.length}</p>
-                      <p className="text-gray-500 text-xs">waypoints</p>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div><p className="text-white font-bold">{activeRideSession.distanceKm.toFixed(2)}</p><p className="text-gray-500 text-xs">km</p></div>
+                      <div><p className="text-white font-bold">{activeRideSession.maxSpeedKmh}</p><p className="text-gray-500 text-xs">top km/h</p></div>
+                      <div><p className="text-white font-bold">{activeRideSession.route.length}</p><p className="text-gray-500 text-xs">waypoints</p></div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <button
-                  onClick={startRideSession}
-                  className="w-full flex items-center justify-center gap-2 bg-green-400/10 border border-green-400/20 text-green-400 font-semibold py-3 rounded-xl hover:bg-green-400/15 transition-all"
-                >
-                  🏍️ Start Recording Ride
-                </button>
-              )}
+                )}
 
-              {myRides.length === 0
-                ? <EmptyState icon="🏍️" text="No ride history" sub="Start a ride to record your stats" />
-                : myRides.map(r => <RideSessionCard key={r.id} session={r} />)
-              }
-            </div>
-          )}
+                {/* GPS-tracked sessions */}
+                {myRides.length > 0 && myRides.map(r => <RideSessionCard key={r.id} session={r} />)}
+
+                {/* Historical rides from mock data */}
+                {RIDE_HISTORY.map(ride => {
+                  const isPrivate = ridePivacy[ride.id] ?? ride.isPrivate
+                  const dH = Math.floor(ride.durationMin / 60), dM = ride.durationMin % 60
+                  return (
+                    <div key={ride.id} className="bg-bg-card rounded-2xl border border-white/5 overflow-hidden">
+                      <div className="p-4 pb-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-bg-surface rounded-xl flex items-center justify-center text-2xl">{ride.emoji}</div>
+                            <div>
+                              <p className="text-white font-semibold text-sm">{ride.title}</p>
+                              <p className="text-gray-500 text-xs">{formatDistanceToNow(ride.date, { addSuffix: true })}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setRidePrivacy(p => ({ ...p, [ride.id]: !isPrivate }))}
+                            className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full transition-all ${isPrivate ? 'bg-gray-600/20 text-gray-400' : 'bg-moto-green/20 text-moto-green'}`}
+                          >
+                            {isPrivate ? <EyeOff size={11} /> : <Eye size={11} />}
+                            {isPrivate ? 'Private' : 'Public'}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-0 px-4 pb-3">
+                        {[
+                          { label: 'Distance', val: `${ride.distanceKm} km` },
+                          { label: 'Time', val: dH > 0 ? `${dH}h ${dM}m` : `${dM}m` },
+                          { label: 'Avg', val: `${ride.avgSpeedKmh} km/h` },
+                          { label: 'Top', val: `${ride.maxSpeedKmh} km/h` },
+                        ].map(s => (
+                          <div key={s.label} className="text-center">
+                            <p className="text-white font-bold text-sm">{s.val}</p>
+                            <p className="text-gray-500 text-[10px]">{s.label}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="px-4 pb-3 border-t border-white/5 pt-2.5">
+                        <p className="text-gray-500 text-[10px] truncate">📍 {ride.route}</p>
+                        {ride.riders.length > 0 && (
+                          <p className="text-gray-600 text-[10px] mt-0.5">with {ride.riders.join(', ')}</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {myRides.length === 0 && RIDE_HISTORY.length === 0 && (
+                  <EmptyState icon="🏍️" text="No rides yet" sub="Start a ride to record your stats" />
+                )}
+              </div>
+            )
+          })()}
+
+          {tab === 'events' && (() => {
+            const [evtFilter, setEvtFilter] = useState<'going' | 'saved' | 'completed'>('going')
+            const now = new Date()
+            const goingIds   = new Set(eventInteractions.filter(i => i.type === 'attending').map(i => i.eventId))
+            const savedIds   = new Set(eventInteractions.filter(i => i.type === 'interested').map(i => i.eventId))
+            const goingEvts  = events.filter(e => goingIds.has(e.id) && e.date >= now)
+            const savedEvts  = events.filter(e => savedIds.has(e.id) && !goingIds.has(e.id))
+            const doneEvts   = events.filter(e => goingIds.has(e.id) && e.date < now)
+            const list = evtFilter === 'going' ? goingEvts : evtFilter === 'saved' ? savedEvts : doneEvts
+            return (
+              <div>
+                {/* Filter chips */}
+                <div className="flex gap-2 mb-4">
+                  {([
+                    { id: 'going', label: `Going (${goingEvts.length})` },
+                    { id: 'saved', label: `Saved (${savedEvts.length})` },
+                    { id: 'completed', label: `Completed (${doneEvts.length})` },
+                  ] as { id: typeof evtFilter; label: string }[]).map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setEvtFilter(f.id)}
+                      className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all ${evtFilter === f.id ? 'bg-accent text-white' : 'bg-bg-card text-gray-400'}`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                {list.length === 0 ? (
+                  <EmptyState
+                    icon={evtFilter === 'going' ? '🎫' : evtFilter === 'saved' ? '🔖' : '✅'}
+                    text={evtFilter === 'going' ? "No upcoming events" : evtFilter === 'saved' ? "No saved events" : "No completed events"}
+                    sub={evtFilter === 'going' ? 'Tap "Going" on events in Explore' : evtFilter === 'saved' ? 'Tap "Interested" on events in Explore' : 'Events you attended will show here'}
+                  />
+                ) : (
+                  <div className="space-y-3">
+                    {list.map(evt => (
+                      <div key={evt.id} className={`bg-bg-card rounded-2xl border p-4 ${evtFilter === 'completed' ? 'border-moto-green/20 opacity-70' : 'border-white/5'}`}>
+                        <div className="flex items-start gap-3">
+                          <div className="w-12 h-12 bg-bg-surface rounded-xl flex items-center justify-center text-2xl flex-shrink-0">{'emoji' in evt ? (evt as any).emoji : '🏍️'}</div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white font-semibold text-sm truncate">{evt.title}</p>
+                            <p className="text-gray-500 text-xs mt-0.5">{format(evt.date, 'EEE, d MMM yyyy · HH:mm')}</p>
+                            <p className="text-gray-600 text-xs mt-0.5 truncate">{evt.location}</p>
+                          </div>
+                          {evtFilter === 'completed' && (
+                            <span className="flex-shrink-0 text-moto-green text-lg">✅</span>
+                          )}
+                          {evtFilter === 'going' && (
+                            <span className="flex-shrink-0 bg-accent/20 text-accent text-[10px] font-bold px-2 py-1 rounded-full">Going</span>
+                          )}
+                          {evtFilter === 'saved' && (
+                            <span className="flex-shrink-0 bg-accent-amber/20 text-accent-amber text-[10px] font-bold px-2 py-1 rounded-full">Saved</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
       </div>
 
@@ -827,6 +934,50 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
       {showCreate && <CreatePostModal onClose={() => setShowCreate(false)} />}
       {showBadgeApply && <BadgeApplicationModal onClose={() => setShowBadgeApply(false)} />}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+    </div>
+  )
+}
+
+function UsernameSetup() {
+  const user = useStore(s => s.user)
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const save = async () => {
+    if (!user || !value.trim()) return
+    setSaving(true); setError(null)
+    const { error: err } = await dbSetUsername(user.id, value.trim())
+    if (err) { setError(err); setSaving(false); return }
+    useStore.setState(s => ({ user: s.user ? { ...s.user, username: value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '') } : s.user }))
+    setEditing(false); setSaving(false)
+  }
+
+  if (!editing) {
+    return (
+      <button onClick={() => setEditing(true)} className="text-accent/70 text-xs mt-0.5 underline underline-offset-2">
+        Set @username
+      </button>
+    )
+  }
+  return (
+    <div className="flex items-center gap-2 mt-1">
+      <span className="text-gray-500 text-sm">@</span>
+      <input
+        autoFocus
+        value={value}
+        onChange={e => setValue(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+        onKeyDown={e => e.key === 'Enter' && save()}
+        placeholder="username"
+        className="flex-1 bg-bg-card border border-accent/40 rounded-lg px-2 py-1 text-white text-sm focus:outline-none"
+        maxLength={30}
+      />
+      <button onClick={save} disabled={saving || !value.trim()} className="text-accent text-xs font-bold px-2 py-1 bg-accent/15 rounded-lg disabled:opacity-40">
+        {saving ? '…' : 'Save'}
+      </button>
+      <button onClick={() => { setEditing(false); setError(null) }} className="text-gray-500 text-xs">✕</button>
+      {error && <p className="text-moto-red text-xs absolute mt-8">{error}</p>}
     </div>
   )
 }

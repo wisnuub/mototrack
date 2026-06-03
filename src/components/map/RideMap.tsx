@@ -659,7 +659,10 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
   const [stops, setStops] = useState<RideStop[]>(DEMO_STOPS)
   const [arrivalNotif, setArrivalNotif] = useState<string | null>(null)
   const prevRideModeRef = useRef<RideMode>('idle')
-  const [gpsState, setGpsState] = useState<'idle' | 'granted' | 'denied' | 'asking'>('asking')
+  // Start as 'granted' if we've had permission before (avoids "requesting GPS" flash on every map visit)
+  const [gpsState, setGpsState] = useState<'idle' | 'granted' | 'denied' | 'asking'>(
+    () => localStorage.getItem('mototrack-gps-granted') === '1' ? 'granted' : 'asking'
+  )
   const [gpsErrorCode, setGpsErrorCode] = useState<number | null>(null)
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
   const [hasGyro, setHasGyro] = useState(false)
@@ -690,11 +693,11 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
     }
   }, [])
 
-  // Auto-request GPS on mount — mandatory for map use
-  const startGpsWatch = () => {
+  const startGpsWatch = (highFreq = false) => {
     if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current)
     if (!navigator.geolocation) { setGpsState('denied'); setGpsErrorCode(0); return }
-    setGpsState('asking')
+    // Only show 'asking' if we've never had permission — avoids the spinner on every map visit
+    if (localStorage.getItem('mototrack-gps-granted') !== '1') setGpsState('asking')
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude]
@@ -702,16 +705,27 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
         setGpsState('granted')
         setGpsErrorCode(null)
         setGpsAccuracy(Math.round(pos.coords.accuracy))
+        localStorage.setItem('mototrack-gps-granted', '1')
       },
       (err) => { setGpsState('denied'); setGpsErrorCode(err.code) },
-      { enableHighAccuracy: true, timeout: 15000 }
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        // Idle: allow 3s cached position; riding: always fresh for smooth tracking
+        maximumAge: highFreq ? 0 : 3000,
+      }
     )
     watchIdRef.current = watchId
   }
 
+  // Switch GPS frequency when ride starts/stops
   useEffect(() => {
-    startGpsWatch()
-    // Detect gyroscope: listen for one deviceorientation event — fires only on phones/tablets with IMU
+    const riding = rideMode === 'solo' || rideMode === 'group'
+    startGpsWatch(riding)
+  }, [rideMode === 'idle' ? 'idle' : 'active']) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    startGpsWatch(false)
     const onOrient = () => { setHasGyro(true); window.removeEventListener('deviceorientation', onOrient) }
     window.addEventListener('deviceorientation', onOrient)
     return () => {
@@ -1184,7 +1198,7 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
               </p>
             )}
             <button
-              onClick={startGpsWatch}
+              onClick={() => startGpsWatch(false)}
               className="w-full bg-accent text-white text-xs font-bold py-2 rounded-xl active:scale-95 transition-all"
             >
               Try again

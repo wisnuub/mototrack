@@ -8,8 +8,14 @@ create table if not exists profiles (
   id          uuid references auth.users on delete cascade primary key,
   name        text not null,
   avatar      text default '🤙',
+  username    text unique,
+  location    text,
   created_at  timestamptz default now()
 );
+
+-- Migration for existing databases (safe to re-run)
+alter table profiles add column if not exists username text unique;
+alter table profiles add column if not exists location text;
 
 -- Auto-create profile on sign-up
 create or replace function handle_new_user()
