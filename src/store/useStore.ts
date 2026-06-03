@@ -12,7 +12,7 @@ import {
   dbGetBikes, dbInsertBike, dbGetMaintenance, dbInsertMaintenance, dbUpdateOdometer,
   dbGetModifications, dbInsertModification, dbDeleteModification,
   dbGetConversations, dbGetMessages, dbSendMessage, dbMarkRead, dbToggleReaction, dbCreateConversation,
-  dbUpsertRider, dbUpdateLocation, dbSetRiderOffline,
+  dbUpsertRider, dbUpdateLocation, dbSetRiderOffline, dbGetAllRiders, dbGetGroups,
   dbGetActivityPosts, dbInsertActivityPost, dbDeleteActivityPost, dbTogglePostLike,
   dbGetRideSessions, dbInsertRideSession,
 } from '../lib/db'
@@ -50,6 +50,7 @@ interface AppState {
   // Riders / real-time tracking
   riders: Rider[]
   updateRiderPosition: (riderId: string, lat: number, lng: number, speed: number) => void
+  upsertRider: (row: Record<string, any>) => void
 
   // Groups
   groups: Group[]
@@ -297,23 +298,66 @@ export const useStore = create<AppState>()(
       loadUserData: async (userId: string) => {
         if (!isSupabaseReady) return
         try {
-          const [bikes, convs, activityPosts, rideSessions] = await Promise.all([
+          const [bikes, convs, activityPosts, rideSessions, allRiders, groups] = await Promise.all([
             dbGetBikes(userId),
             dbGetConversations(userId),
             dbGetActivityPosts(userId),
             dbGetRideSessions(userId),
+            dbGetAllRiders(),
+            dbGetGroups(userId),
           ])
-          const bikeIds = bikes.map(b => b.id)
+          const bikeIds = bikes.map((b: any) => b.id)
           const [maintenance, mods] = bikeIds.length
             ? await Promise.all([dbGetMaintenance(bikeIds), dbGetModifications(bikeIds)])
             : [[], []]
-          set({ bikes, maintenance, mods, conversations: convs, activityPosts, rideSessions })
 
-          // Upsert this user's rider row
+          // Map group members from junction table
+          const mappedGroups: Group[] = groups.map((g: any) => ({
+            id: g.id,
+            name: g.name,
+            emoji: g.emoji ?? '🏍️',
+            description: g.description ?? '',
+            members: (g.group_members ?? []).map((m: any) => m.user_id),
+            ownerId: g.owner_id,
+            isActive: g.is_active ?? true,
+            createdAt: new Date(g.created_at),
+            destination: g.destination_lat ? { lat: g.destination_lat, lng: g.destination_lng } : undefined,
+            destinationName: g.destination_name,
+          }))
+
+          // Build the set of rider IDs that belong to any of my groups (for privacy)
+          const groupRiderIds = new Set(
+            mappedGroups.flatMap(g => g.members.map((uid: string) => `rider-${uid.slice(0, 8)}`))
+          )
+          const myRiderId = `rider-${userId.slice(0, 8)}`
+
+          const mappedRiders: Rider[] = allRiders
+            .filter((r: any) => {
+              if (r.id === myRiderId) return true          // always include self
+              if (r.status === 'offline') return false     // hide offline riders
+              // Only show riders from my groups (or all if I have no groups yet)
+              return mappedGroups.length === 0 || groupRiderIds.has(r.id)
+            })
+            .map((r: any): Rider => ({
+              id: r.id,
+              name: r.name ?? 'Rider',
+              avatar: r.avatar ?? '🤙',
+              color: r.color ?? '#ff6b35',
+              position: { lat: r.lat ?? -8.6705, lng: r.lng ?? 115.2126 },
+              heading: r.heading ?? 0,
+              speed: r.speed ?? 0,
+              status: r.status ?? 'offline',
+              bikeId: r.bike_id ?? '',
+              lastSeen: r.updated_at ? new Date(r.updated_at) : new Date(),
+              routeProgress: 0,
+            }))
+
+          set({ bikes, maintenance, mods, conversations: convs, activityPosts, rideSessions, riders: mappedRiders, groups: mappedGroups })
+
+          // Upsert this user's rider row so others can see them
           const user = get().user
           if (user) {
-            const riderId = `rider-${user.id.slice(0, 8)}`
-            await dbUpsertRider(userId, riderId, user.name, user.avatar, '#ff6b35')
+            await dbUpsertRider(userId, myRiderId, user.name, user.avatar, '#ff6b35')
           }
         } catch (e) {
           console.warn('loadUserData failed, using mock data', e)
@@ -332,6 +376,27 @@ export const useStore = create<AppState>()(
             r.id === riderId ? { ...r, position: { lat, lng }, speed, lastSeen: new Date() } : r
           )
         }))
+      },
+      upsertRider: (row) => {
+        set(state => {
+          const existing = state.riders.find(r => r.id === row.id)
+          // Don't add strangers — only update riders already known (loaded at startup)
+          if (!existing) return state
+          return {
+            riders: state.riders.map(r =>
+              r.id === row.id
+                ? {
+                    ...r,
+                    position: { lat: row.lat ?? r.position.lat, lng: row.lng ?? r.position.lng },
+                    heading: row.heading ?? r.heading,
+                    speed: row.speed ?? r.speed,
+                    status: row.status ?? r.status,
+                    lastSeen: row.updated_at ? new Date(row.updated_at) : new Date(),
+                  }
+                : r
+            ),
+          }
+        })
       },
 
       // Groups — hide mock data when using real Supabase accounts
