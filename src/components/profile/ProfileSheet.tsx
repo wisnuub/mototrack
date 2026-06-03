@@ -788,8 +788,23 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
   const stopRideSession = useStore(s => s.stopRideSession)
 
   const [tab, setTab] = useState<ProfileTab>('posts')
+  const [showInstallGuide, setShowInstallGuide] = useState(false)
   const eventInteractions = useStore(s => s.eventInteractions)
   const events = useStore(s => s.events)
+
+  const isStandalone = ('standalone' in navigator && (navigator as any).standalone) ||
+    window.matchMedia('(display-mode: standalone)').matches
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !/CriOS|FxiOS/.test(navigator.userAgent)
+  const deferredPrompt = (window as any).__pwaPrompt ?? null
+
+  const handleInstall = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt()
+      await deferredPrompt.userChoice
+    } else if (isIOS) {
+      setShowInstallGuide(true)
+    }
+  }
   const [showCreate, setShowCreate] = useState(false)
   const [showBadgeApply, setShowBadgeApply] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
@@ -825,6 +840,14 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
               <Shield size={12} /> Admin
             </button>
           )}
+          {!isStandalone && (deferredPrompt || isIOS) && (
+            <button
+              onClick={handleInstall}
+              className="flex items-center gap-1.5 bg-accent/10 text-accent text-xs font-semibold px-3 py-1.5 rounded-full"
+            >
+              📲 Install App
+            </button>
+          )}
           <button
             onClick={handleSignOut}
             className="flex items-center gap-1.5 bg-moto-red/10 text-moto-red text-xs font-semibold px-3 py-1.5 rounded-full"
@@ -833,6 +856,32 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
+
+      {/* iOS install guide */}
+      {showInstallGuide && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowInstallGuide(false)} />
+          <div className="relative bg-bg-secondary rounded-t-3xl w-full max-w-lg animate-slide-up p-6 pb-safe">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-white font-bold text-lg">Add to Home Screen</h3>
+              <button onClick={() => setShowInstallGuide(false)} className="text-gray-400"><X size={20} /></button>
+            </div>
+            <div className="space-y-3">
+              {[
+                { icon: '⬆️', text: 'Tap the Share button at the bottom of Safari' },
+                { icon: '➕', text: 'Scroll down and tap "Add to Home Screen"' },
+                { icon: '✅', text: 'Tap "Add" — MotoTrack will appear on your home screen' },
+              ].map((step, i) => (
+                <div key={i} className="flex items-center gap-4 bg-bg-card rounded-2xl px-4 py-3 border border-white/5">
+                  <span className="text-2xl flex-shrink-0">{step.icon}</span>
+                  <p className="text-gray-300 text-sm">{step.text}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-gray-500 text-xs text-center mt-4">Once installed, the app works like a native app with offline support</p>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {/* Profile hero */}

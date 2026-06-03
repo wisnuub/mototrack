@@ -24,12 +24,22 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // Activate new service worker immediately — no waiting for tabs to close
+        skipWaiting: true,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // App shell: always try network first so deploys are picked up fast
+        navigateFallback: 'index.html',
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/tile\.openstreetmap\.org\/.*/i,
             handler: 'CacheFirst',
             options: { cacheName: 'osm-tiles', expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 60 * 60 } }
+          },
+          {
+            urlPattern: /^https:\/\/basemaps\.cartocdn\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: { cacheName: 'carto-tiles', expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 60 * 60 } }
           },
           {
             urlPattern: /^https:\/\/api\.open-meteo\.com\/.*/i,
