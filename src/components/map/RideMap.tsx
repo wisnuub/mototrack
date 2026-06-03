@@ -167,6 +167,16 @@ function RecenterMap({ center, gpsGranted, forceTick }: { center: [number, numbe
   return null
 }
 
+function FitBounds({ positions, tick }: { positions: [number, number][]; tick: number }) {
+  const map = useMap()
+  useEffect(() => {
+    if (tick > 0 && positions.length > 1) {
+      map.fitBounds(positions, { padding: [60, 60], animate: true, maxZoom: 14 })
+    }
+  }, [tick]) // eslint-disable-line react-hooks/exhaustive-deps
+  return null
+}
+
 function RiderCard({ rider }: { rider: Rider }) {
   const bike = useStore(s => s.bikes.find(b => b.id === rider.bikeId))
   return (
@@ -686,6 +696,15 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
   const [mapTarget, setMapTarget] = useState<{ coords: [number, number]; name: string } | null>(null)
   const watchIdRef = useRef<number | null>(null)
 
+  // Route preview state (from Explore "Show on Map")
+  const [previewPolyline, setPreviewPolyline] = useState<[number, number][]>([])
+  const [previewStops, setPreviewStops] = useState<{ coords: [number, number]; name: string; isEnd: boolean }[]>([])
+  const [previewName, setPreviewName] = useState<string | null>(null)
+  const [previewDistM, setPreviewDistM] = useState(0)
+  const [previewDurS, setPreviewDurS] = useState(0)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [fitBoundsTick, setFitBoundsTick] = useState(0)
+
   // Navigation state
   const [navRoute, setNavRoute] = useState<[number, number][]>([])
   const [navSteps, setNavSteps] = useState<NavStep[]>([])
@@ -699,12 +718,64 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
 
   // Pick up "show on map" requests from ExplorePanel
   useEffect(() => {
-    const raw = localStorage.getItem('mototrack-map-target')
-    if (raw) {
+    // Single attraction pin
+    const rawTarget = localStorage.getItem('mototrack-map-target')
+    if (rawTarget) {
       try {
-        const t = JSON.parse(raw)
+        const t = JSON.parse(rawTarget)
         setMapTarget({ coords: [t.lat, t.lng], name: t.name })
         localStorage.removeItem('mototrack-map-target')
+      } catch {}
+    }
+
+    // Full route preview (from Explore Routes → Show on Map)
+    const rawRoute = localStorage.getItem('mototrack-route-preview')
+    if (rawRoute) {
+      try {
+        const { name, waypoints } = JSON.parse(rawRoute) as {
+          name: string
+          waypoints: { lat: number; lng: number; name: string }[]
+        }
+        localStorage.removeItem('mototrack-route-preview')
+        if (waypoints.length >= 2) {
+          setPreviewName(name)
+          setPreviewLoading(true)
+          // Fetch real road-following route from OSRM
+          import('../../lib/routing').then(({ planRoute }) => {
+            planRoute(waypoints[0].lat, waypoints[0].lng, waypoints.slice(1).map(w => w.name))
+              .then(res => {
+                if (res) {
+                  setPreviewPolyline(res.route.routeGeometry)
+                  setPreviewDistM(res.route.totalDistance)
+                  setPreviewDurS(res.route.totalDuration)
+                  setPreviewStops(waypoints.map((w, i) => ({
+                    coords: [w.lat, w.lng] as [number, number],
+                    name: w.name,
+                    isEnd: i === waypoints.length - 1,
+                  })))
+                } else {
+                  // Fallback: draw straight lines between waypoints
+                  setPreviewPolyline(waypoints.map(w => [w.lat, w.lng] as [number, number]))
+                  setPreviewStops(waypoints.map((w, i) => ({
+                    coords: [w.lat, w.lng] as [number, number],
+                    name: w.name,
+                    isEnd: i === waypoints.length - 1,
+                  })))
+                }
+                setFitBoundsTick(t => t + 1)
+              })
+              .catch(() => {
+                setPreviewPolyline(waypoints.map(w => [w.lat, w.lng] as [number, number]))
+                setPreviewStops(waypoints.map((w, i) => ({
+                  coords: [w.lat, w.lng] as [number, number],
+                  name: w.name,
+                  isEnd: i === waypoints.length - 1,
+                })))
+                setFitBoundsTick(t => t + 1)
+              })
+              .finally(() => setPreviewLoading(false))
+          })
+        }
       } catch {}
     }
   }, [])
@@ -1018,6 +1089,34 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
             </Marker>
           ))}
 
+          {/* Route preview polyline (from Explore "Show on Map") */}
+          {previewPolyline.length > 1 && (
+            <>
+              <Polyline positions={previewPolyline} pathOptions={{ color: '#1f2937', weight: 7, opacity: 0.9 }} />
+              <Polyline positions={previewPolyline} pathOptions={{ color: '#3b82f6', weight: 4, opacity: 1 }} />
+            </>
+          )}
+
+          {/* Route preview stop pins */}
+          {previewStops.map((stop, i) => {
+            const isStart = i === 0
+            const color = isStart ? '#30d158' : stop.isEnd ? '#ff453a' : '#ffd60a'
+            const icon = L.divIcon({
+              html: `<svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 0C6.3 0 0 6.3 0 14c0 9.8 14 22 14 22S28 23.8 28 14C28 6.3 21.7 0 14 0z" fill="${color}"/>
+                <circle cx="14" cy="14" r="8" fill="white" opacity="0.95"/>
+                <text x="14" y="18" text-anchor="middle" font-size="9" font-weight="bold" fill="${color}">${isStart ? 'A' : stop.isEnd ? 'B' : String(i)}</text>
+              </svg>`,
+              className: '', iconSize: [28, 36], iconAnchor: [14, 36], popupAnchor: [0, -36],
+            })
+            return (
+              <Marker key={`prev-${i}`} position={stop.coords} icon={icon}>
+                <Popup><div className="bg-bg-card rounded-xl p-2"><p className="text-white text-xs font-semibold">{stop.name}</p></div></Popup>
+              </Marker>
+            )
+          })}
+
+          <FitBounds positions={previewPolyline.length > 1 ? previewPolyline : previewStops.map(s => s.coords)} tick={fitBoundsTick} />
           <RecenterMap center={mapTarget ? mapTarget.coords : center} gpsGranted={gpsState === 'granted'} forceTick={forceCenterTick} />
         </MapContainer>
 
@@ -1138,8 +1237,45 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           </div>
         )}
 
+        {/* Route preview banner */}
+        {previewName && rideMode === 'idle' && (
+          <div className="absolute top-3 left-3 right-3 z-10">
+            <div className="bg-[#0d1f3a]/95 backdrop-blur-md rounded-2xl border border-blue-500/30 shadow-xl overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3">
+                {previewLoading ? (
+                  <span className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin flex-shrink-0" />
+                ) : (
+                  <div className="w-8 h-8 bg-blue-600/30 rounded-lg flex items-center justify-center flex-shrink-0 text-blue-400">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="2,8 6,4 10,8 14,4" /></svg>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-bold text-sm truncate">{previewName}</p>
+                  {previewLoading ? (
+                    <p className="text-blue-300 text-xs">Fetching road route…</p>
+                  ) : (
+                    <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                      {previewDistM > 0 && <span className="text-blue-300 text-xs">{(previewDistM / 1000).toFixed(1)} km</span>}
+                      {previewDurS > 0 && <span className="text-blue-300 text-xs">~{Math.ceil(previewDurS / 60)} min</span>}
+                      {previewStops.length > 2 && <span className="text-blue-300 text-xs">{previewStops.length - 2} stop{previewStops.length - 2 > 1 ? 's' : ''}</span>}
+                      {/* Basic toll detection: Bali Mandara toll road area */}
+                      {previewStops.some(s => s.coords[0] > -8.73 && s.coords[0] < -8.67 && s.coords[1] > 115.17 && s.coords[1] < 115.25) && (
+                        <span className="text-accent-amber text-xs font-semibold">🛣️ Toll ~Rp 5.500</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setPreviewName(null); setPreviewPolyline([]); setPreviewStops([]); setPreviewDistM(0); setPreviewDurS(0) }}
+                  className="text-gray-400 text-lg leading-none ml-1 flex-shrink-0"
+                >✕</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Destination banner (Explore pin) */}
-        {mapTarget && rideMode === 'idle' && (
+        {mapTarget && rideMode === 'idle' && !previewName && (
           <div className="absolute top-3 left-3 right-3 z-10 pointer-events-none">
             <div className="bg-bg-primary/90 backdrop-blur-md rounded-2xl px-4 py-2.5 border border-accent/30 flex items-center justify-between pointer-events-auto">
               <div>

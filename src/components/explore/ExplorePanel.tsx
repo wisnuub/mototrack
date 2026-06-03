@@ -1342,12 +1342,17 @@ export default function ExplorePanel() {
   }
 
   const handleShowRouteOnMap = (trip: TripTemplate) => {
-    if (trip.waypoints.length > 0) {
-      const wp = trip.waypoints[0]
-      localStorage.setItem('mototrack-map-target', JSON.stringify({ lat: wp.position.lat, lng: wp.position.lng, name: trip.title }))
-    } else if (trip.route.length > 0) {
-      const pt = trip.route[0]
-      localStorage.setItem('mototrack-map-target', JSON.stringify({ lat: pt.lat, lng: pt.lng, name: trip.title }))
+    // Store all waypoints so RideMap can fetch the real road-following route via OSRM
+    const waypoints = trip.waypoints.length > 0
+      ? trip.waypoints.map(wp => ({ lat: wp.position.lat, lng: wp.position.lng, name: wp.name }))
+      : trip.route.length > 1
+        ? [
+            { lat: trip.route[0].lat, lng: trip.route[0].lng, name: 'Start' },
+            { lat: trip.route[trip.route.length - 1].lat, lng: trip.route[trip.route.length - 1].lng, name: 'End' },
+          ]
+        : null
+    if (waypoints && waypoints.length >= 2) {
+      localStorage.setItem('mototrack-route-preview', JSON.stringify({ name: trip.title, waypoints }))
     }
     setActiveTab('map')
   }
