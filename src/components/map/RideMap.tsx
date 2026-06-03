@@ -6,6 +6,8 @@ import { useStore } from '../../store/useStore'
 import { isSupabaseReady } from '../../lib/supabase'
 import { useRideSimulation } from '../../hooks/useRideSimulation'
 import { INDONESIA_CENTER, KINTAMANI_ROUTE } from '../../data/mockData'
+import { planRoute } from '../../lib/routing'
+import type { NavStep } from '../../lib/routing'
 import type { Rider } from '../../types'
 
 type RideMode = 'idle' | 'solo' | 'group' | 'paused'
@@ -109,6 +111,26 @@ function createStopIcon(emoji: string, arrived: boolean, num: number) {
     </svg>
   `
   return L.divIcon({ html: svg, className: '', iconSize: [34, 42], iconAnchor: [17, 42], popupAnchor: [0, -42] })
+}
+
+function maneuverArrow(type: string, modifier: string): string {
+  if (type === 'arrive') return '🏁'
+  if (type === 'roundabout' || type === 'rotary' || type === 'exit roundabout' || type === 'exit rotary') return '↻'
+  if (modifier === 'uturn') return '↩'
+  if (modifier === 'sharp left') return '↰'
+  if (modifier === 'left') return '←'
+  if (modifier === 'slight left') return '↖'
+  if (modifier === 'slight right') return '↗'
+  if (modifier === 'sharp right') return '↱'
+  if (modifier === 'right') return '→'
+  return '↑'
+}
+
+function fmtDist(metres: number): string {
+  if (metres >= 10000) return `${Math.round(metres / 1000)} km`
+  if (metres >= 1000) return `${(metres / 1000).toFixed(1)} km`
+  if (metres >= 100) return `${Math.round(metres / 100) * 100} m`
+  return `${Math.round(metres / 10) * 10} m`
 }
 
 function RecenterMap({ center, gpsGranted, forceTick }: { center: [number, number]; gpsGranted: boolean; forceTick: number }) {
@@ -645,6 +667,15 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
   const [mapTarget, setMapTarget] = useState<{ coords: [number, number]; name: string } | null>(null)
   const watchIdRef = useRef<number | null>(null)
 
+  // Navigation state
+  const [navRoute, setNavRoute] = useState<[number, number][]>([])
+  const [navSteps, setNavSteps] = useState<NavStep[]>([])
+  const [currentStepIdx, setCurrentStepIdx] = useState(0)
+  const [navLoading, setNavLoading] = useState(false)
+  const [navError, setNavError] = useState<string | null>(null)
+  const [navTotalDistance, setNavTotalDistance] = useState(0)
+  const [navTotalDuration, setNavTotalDuration] = useState(0)
+
   useRideSimulation(true)
 
   // Pick up "show on map" requests from ExplorePanel
@@ -706,41 +737,93 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
     return () => clearInterval(t)
   }, [rideMode, showShareCard])
 
-  // Reset on ride start; capture lap time on pause
+  // Reset on ride start; capture lap time on pause; tear down nav on end
   useEffect(() => {
     const prev = prevRideModeRef.current
     if (prev === 'idle' && (rideMode === 'solo' || rideMode === 'group')) {
-      // Use user-defined destinations for routed rides, otherwise demo stops
-      const newStops: RideStop[] = (rideStyle === 'routed' && userDestinations.length > 0)
-        ? userDestinations.slice(0, DEMO_STOPS.length).map((name, i) => ({
-            ...DEMO_STOPS[i] ?? DEMO_STOPS[0],
-            id: `us-${i}`,
-            name,
-            arrived: false,
-          }))
-        : DEMO_STOPS.map(s => ({ ...s, arrived: false }))
-      setStops(newStops)
       setElapsed(0)
       setLapCount(0)
+      setCurrentStepIdx(0)
+      setNavRoute([])
+      setNavSteps([])
+      setNavError(null)
+
+      if (rideStyle === 'routed' && userDestinations.length > 0) {
+        // Start with empty stops — populated after geocoding
+        setStops([])
+        setNavLoading(true)
+        const startPos = realPosition ?? INDONESIA_CENTER
+        let cancelled = false
+        planRoute(startPos[0], startPos[1], userDestinations)
+          .then(res => {
+            if (cancelled) return
+            if (!res) {
+              setNavError("Couldn't find route — check destination names")
+              setStops(DEMO_STOPS.map(s => ({ ...s, arrived: false })))
+              return
+            }
+            setNavRoute(res.route.routeGeometry)
+            setNavSteps(res.route.steps)
+            setNavTotalDistance(res.route.totalDistance)
+            setNavTotalDuration(res.route.totalDuration)
+            const stopIcons = ['📍', '🏁', '⭐', '🎯', '🔵'] as const
+            setStops(res.stops.map((coords, i) => ({
+              id: `gs-${i}`,
+              name: userDestinations[i] ?? `Stop ${i + 1}`,
+              emoji: stopIcons[i % stopIcons.length],
+              coords,
+              arrived: false,
+            })))
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setNavError('Navigation unavailable — riding without guidance')
+              setStops(DEMO_STOPS.map(s => ({ ...s, arrived: false })))
+            }
+          })
+          .finally(() => { if (!cancelled) setNavLoading(false) })
+        return () => { cancelled = true }
+      } else {
+        setStops(DEMO_STOPS.map(s => ({ ...s, arrived: false })))
+      }
     }
     if ((prev === 'solo' || prev === 'group') && rideMode === 'paused') {
       setLapElapsed(elapsed)
       setLapCount(c => c + 1)
     }
+    if (rideMode === 'idle') {
+      setNavRoute([])
+      setNavSteps([])
+      setCurrentStepIdx(0)
+      setNavLoading(false)
+      setNavError(null)
+    }
     prevRideModeRef.current = rideMode
   }, [rideMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Geofence: auto-pause + check-in when within 100m of the next stop
+  // Also advances nav steps when within 40m of the next maneuver point
   useEffect(() => {
     if (!realPosition || rideMode === 'idle' || rideMode === 'paused') return
+
+    // Stop geofence check-in
     const nextStop = stops.find(s => !s.arrived)
-    if (!nextStop) return
-    if (haversineMeters(realPosition, nextStop.coords) <= 100) {
-      setStops(prev => prev.map(s => s.id === nextStop.id ? { ...s, arrived: true } : s))
-      setArrivalNotif(nextStop.name)
-      onPauseRide?.()
-      const t = setTimeout(() => setArrivalNotif(null), 4000)
-      return () => clearTimeout(t)
+    if (nextStop) {
+      if (haversineMeters(realPosition, nextStop.coords) <= 100) {
+        setStops(prev => prev.map(s => s.id === nextStop.id ? { ...s, arrived: true } : s))
+        setArrivalNotif(nextStop.name)
+        onPauseRide?.()
+        const t = setTimeout(() => setArrivalNotif(null), 4000)
+        return () => clearTimeout(t)
+      }
+    }
+
+    // Nav step advancement
+    if (rideStyle === 'routed' && navSteps.length > 0) {
+      const nextStep = navSteps[currentStepIdx + 1]
+      if (nextStep && haversineMeters(realPosition, nextStep.location) <= 40) {
+        setCurrentStepIdx(i => i + 1)
+      }
     }
   }, [realPosition]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -752,9 +835,16 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
     return `${m}:${String(s).padStart(2, '0')}`
   }
 
-  const routePositions = (activeGroup?.route ?? KINTAMANI_ROUTE).map(
-    p => [p.lat, p.lng] as [number, number]
-  )
+  const routePositions: [number, number][] =
+    rideStyle === 'routed' && navRoute.length > 1
+      ? navRoute
+      : (activeGroup?.route ?? KINTAMANI_ROUTE).map(p => [p.lat, p.lng] as [number, number])
+
+  // Remaining distance for the live stats bar
+  const navDistanceRemaining =
+    rideStyle === 'routed' && navSteps.length > 0
+      ? navSteps.slice(currentStepIdx).reduce((sum, s) => sum + s.distance, 0)
+      : null
 
   const riderPositions = riders.filter(r => r.position).map(r => [r.position.lat, r.position.lng] as [number, number])
 
@@ -901,8 +991,63 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           <RecenterMap center={mapTarget ? mapTarget.coords : center} gpsGranted={gpsState === 'granted'} forceTick={forceCenterTick} />
         </MapContainer>
 
-        {/* Group + destination overlay — only during active ride */}
-        {rideMode !== 'idle' && (
+        {/* Navigation banner — routed rides */}
+        {rideMode !== 'idle' && rideStyle === 'routed' && (
+          <div className="absolute top-3 left-3 right-3 z-10">
+            {navLoading ? (
+              <div className="bg-[#0d2137]/95 backdrop-blur-md rounded-2xl px-4 py-3 border border-blue-500/30 flex items-center gap-3 shadow-lg">
+                <span className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin flex-shrink-0" />
+                <div>
+                  <p className="text-white text-sm font-semibold">Calculating route…</p>
+                  <p className="text-blue-300 text-xs mt-0.5">Looking up destinations</p>
+                </div>
+              </div>
+            ) : navError ? (
+              <div className="bg-[#2d0a0a]/95 backdrop-blur-md rounded-2xl px-4 py-3 border border-moto-red/30 flex items-center gap-3 shadow-lg">
+                <span className="text-xl flex-shrink-0">⚠️</span>
+                <p className="text-white text-sm font-medium">{navError}</p>
+              </div>
+            ) : navSteps.length > 0 && currentStepIdx < navSteps.length ? (
+              <div className="bg-[#0d2137]/95 backdrop-blur-md rounded-2xl border border-blue-500/30 shadow-xl overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <div className="w-12 h-12 flex-shrink-0 flex items-center justify-center bg-blue-600/30 rounded-xl">
+                    <span className="text-3xl leading-none select-none">
+                      {maneuverArrow(navSteps[currentStepIdx].maneuverType, navSteps[currentStepIdx].maneuverModifier)}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-bold text-sm leading-tight line-clamp-1">
+                      {navSteps[currentStepIdx].instruction}
+                    </p>
+                    {navSteps[currentStepIdx + 1] && (
+                      <p className="text-blue-300 text-xs mt-0.5 truncate">
+                        Then: {navSteps[currentStepIdx + 1].instruction}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0 text-right">
+                    <p className="text-white font-black text-base leading-none">
+                      {fmtDist(navSteps[currentStepIdx].distance)}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-black/25 px-4 py-1.5 flex items-center justify-between">
+                  <p className="text-blue-300 text-xs">
+                    {navSteps[currentStepIdx + 1] ? `${currentStepIdx + 1} of ${navSteps.length - 1} steps` : '🏁 Approaching destination'}
+                  </p>
+                  {navDistanceRemaining !== null && (
+                    <p className="text-blue-300 text-xs">
+                      {fmtDist(navDistanceRemaining)} · {Math.ceil(navTotalDuration * (navDistanceRemaining / Math.max(navTotalDistance, 1)) / 60)} min
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        {/* Group + destination overlay — wind rides only (nav banner handles routed) */}
+        {rideMode !== 'idle' && rideStyle !== 'routed' && (
           <div className="absolute top-3 left-3 right-3 z-10 pointer-events-none">
             <div className="bg-bg-primary/90 backdrop-blur-md rounded-2xl px-4 py-2.5 border border-white/10">
               <div className="flex items-center justify-between">
@@ -920,12 +1065,12 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           </div>
         )}
 
-        {/* Destination banner */}
-        {mapTarget && (
+        {/* Destination banner (Explore pin) */}
+        {mapTarget && rideMode === 'idle' && (
           <div className="absolute top-3 left-3 right-3 z-10 pointer-events-none">
             <div className="bg-bg-primary/90 backdrop-blur-md rounded-2xl px-4 py-2.5 border border-accent/30 flex items-center justify-between pointer-events-auto">
               <div>
-                <p className="text-accent text-xs font-semibold">Navigating to</p>
+                <p className="text-accent text-xs font-semibold">Pinned location</p>
                 <p className="text-white font-bold text-sm">{mapTarget.name}</p>
               </div>
               <button onClick={() => setMapTarget(null)} className="text-gray-400 text-lg leading-none ml-3">✕</button>
@@ -1077,7 +1222,11 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
             <LiveStat label="Time" value={formatTime(elapsed)} />
             <LiveStat label="Avg Speed" value={`${avgSpeed}`} sub="km/h" />
             <LiveStat label="Top Speed" value={`${maxSpeed}`} sub="km/h" />
-            <LiveStat label="Remaining" value={`${distRemaining}`} sub="km" />
+            <LiveStat
+              label="Remaining"
+              value={navDistanceRemaining !== null ? (navDistanceRemaining / 1000).toFixed(1) : `${distRemaining}`}
+              sub="km"
+            />
           </div>
         </div>
       )}
