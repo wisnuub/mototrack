@@ -992,59 +992,102 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
         </MapContainer>
 
         {/* Navigation banner — routed rides */}
-        {rideMode !== 'idle' && rideStyle === 'routed' && (
-          <div className="absolute top-3 left-3 right-3 z-10">
-            {navLoading ? (
-              <div className="bg-[#0d2137]/95 backdrop-blur-md rounded-2xl px-4 py-3 border border-blue-500/30 flex items-center gap-3 shadow-lg">
-                <span className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin flex-shrink-0" />
-                <div>
-                  <p className="text-white text-sm font-semibold">Calculating route…</p>
-                  <p className="text-blue-300 text-xs mt-0.5">Looking up destinations</p>
-                </div>
+        {rideMode !== 'idle' && rideStyle === 'routed' && (() => {
+          const otherRiders = riders.filter(r => r.id !== myRiderId && r.status !== 'offline')
+          const isPhoto = (v: string) => v.startsWith('http') || v.startsWith('data:')
+          const Avatar = ({ src, size = 'md' }: { src: string; size?: 'sm' | 'md' }) => {
+            const cls = size === 'sm'
+              ? 'w-6 h-6 rounded-full border border-white/20 bg-bg-card flex items-center justify-center overflow-hidden flex-shrink-0'
+              : 'w-12 h-12 rounded-xl border-2 border-blue-400/50 bg-bg-card flex items-center justify-center overflow-hidden flex-shrink-0'
+            return (
+              <div className={cls}>
+                {isPhoto(src)
+                  ? <img src={src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  : <span className={size === 'sm' ? 'text-xs' : 'text-2xl'}>{src}</span>}
               </div>
-            ) : navError ? (
-              <div className="bg-[#2d0a0a]/95 backdrop-blur-md rounded-2xl px-4 py-3 border border-moto-red/30 flex items-center gap-3 shadow-lg">
-                <span className="text-xl flex-shrink-0">⚠️</span>
-                <p className="text-white text-sm font-medium">{navError}</p>
-              </div>
-            ) : navSteps.length > 0 && currentStepIdx < navSteps.length ? (
-              <div className="bg-[#0d2137]/95 backdrop-blur-md rounded-2xl border border-blue-500/30 shadow-xl overflow-hidden">
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <div className="w-12 h-12 flex-shrink-0 flex items-center justify-center bg-blue-600/30 rounded-xl">
-                    <span className="text-3xl leading-none select-none">
-                      {maneuverArrow(navSteps[currentStepIdx].maneuverType, navSteps[currentStepIdx].maneuverModifier)}
-                    </span>
+            )
+          }
+          return (
+            <div className="absolute top-3 left-3 right-3 z-10">
+              {navLoading ? (
+                <div className="bg-[#0d2137]/95 backdrop-blur-md rounded-2xl px-4 py-3 border border-blue-500/30 flex items-center gap-3 shadow-lg">
+                  <span className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin flex-shrink-0" />
+                  <div>
+                    <p className="text-white text-sm font-semibold">Calculating route…</p>
+                    <p className="text-blue-300 text-xs mt-0.5">Looking up destinations</p>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white font-bold text-sm leading-tight line-clamp-1">
-                      {navSteps[currentStepIdx].instruction}
+                </div>
+              ) : navError ? (
+                <div className="bg-[#2d0a0a]/95 backdrop-blur-md rounded-2xl px-4 py-3 border border-moto-red/30 flex items-center gap-3 shadow-lg">
+                  <span className="text-xl flex-shrink-0">⚠️</span>
+                  <p className="text-white text-sm font-medium">{navError}</p>
+                </div>
+              ) : navSteps.length > 0 && currentStepIdx < navSteps.length ? (
+                <div className="bg-[#0d2137]/95 backdrop-blur-md rounded-2xl border border-blue-500/30 shadow-xl overflow-hidden">
+                  {/* Main instruction row */}
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    {/* Rider avatar + direction badge */}
+                    <div className="relative flex-shrink-0">
+                      <Avatar src={myAvatar} size="md" />
+                      <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center border-2 border-[#0d2137] text-white text-[11px] font-bold select-none leading-none">
+                        {maneuverArrow(navSteps[currentStepIdx].maneuverType, navSteps[currentStepIdx].maneuverModifier)}
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-bold text-sm leading-tight line-clamp-2">
+                        {navSteps[currentStepIdx].instruction}
+                      </p>
+                      {navSteps[currentStepIdx + 1] && (
+                        <p className="text-blue-300 text-xs mt-0.5 truncate">
+                          Then: {navSteps[currentStepIdx + 1].instruction}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex-shrink-0 text-right">
+                      <p className="text-white font-black text-base leading-none">
+                        {fmtDist(navSteps[currentStepIdx].distance)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Group members + ETA strip */}
+                  <div className="bg-black/25 px-4 py-2 flex items-center gap-2">
+                    {otherRiders.length > 0 && (
+                      <div className="flex items-center gap-1 mr-1.5">
+                        {otherRiders.slice(0, 4).map(r => (
+                          <div key={r.id} className="relative">
+                            <Avatar src={r.avatar} size="sm" />
+                            <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#0d2137] ${
+                              r.status === 'riding' ? 'bg-moto-green' : 'bg-accent-amber'
+                            }`} />
+                          </div>
+                        ))}
+                        {otherRiders.length > 4 && (
+                          <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                            <span className="text-white text-[9px] font-bold">+{otherRiders.length - 4}</span>
+                          </div>
+                        )}
+                        <span className="text-blue-300/60 text-[10px] ml-1">
+                          {otherRiders.length} riding
+                        </span>
+                      </div>
+                    )}
+                    <p className="text-blue-300 text-xs">
+                      {navSteps[currentStepIdx + 1] ? `${currentStepIdx + 1}/${navSteps.length - 1}` : '🏁 Arriving'}
                     </p>
-                    {navSteps[currentStepIdx + 1] && (
-                      <p className="text-blue-300 text-xs mt-0.5 truncate">
-                        Then: {navSteps[currentStepIdx + 1].instruction}
+                    {navDistanceRemaining !== null && (
+                      <p className="text-blue-300 text-xs ml-auto">
+                        {fmtDist(navDistanceRemaining)} · {Math.ceil(navTotalDuration * (navDistanceRemaining / Math.max(navTotalDistance, 1)) / 60)} min
                       </p>
                     )}
                   </div>
-                  <div className="flex-shrink-0 text-right">
-                    <p className="text-white font-black text-base leading-none">
-                      {fmtDist(navSteps[currentStepIdx].distance)}
-                    </p>
-                  </div>
                 </div>
-                <div className="bg-black/25 px-4 py-1.5 flex items-center justify-between">
-                  <p className="text-blue-300 text-xs">
-                    {navSteps[currentStepIdx + 1] ? `${currentStepIdx + 1} of ${navSteps.length - 1} steps` : '🏁 Approaching destination'}
-                  </p>
-                  {navDistanceRemaining !== null && (
-                    <p className="text-blue-300 text-xs">
-                      {fmtDist(navDistanceRemaining)} · {Math.ceil(navTotalDuration * (navDistanceRemaining / Math.max(navTotalDistance, 1)) / 60)} min
-                    </p>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        )}
+              ) : null}
+            </div>
+          )
+        })()}
 
         {/* Group + destination overlay — wind rides only (nav banner handles routed) */}
         {rideMode !== 'idle' && rideStyle !== 'routed' && (
