@@ -136,18 +136,34 @@ function fmtDist(metres: number): string {
 function RecenterMap({ center, gpsGranted, forceTick }: { center: [number, number]; gpsGranted: boolean; forceTick: number }) {
   const map = useMap()
   const firstGrant = useRef(false)
+  const following = useRef(true)  // true = auto-follow GPS; false = user panned away
+
+  // Stop following when the user drags the map
+  useEffect(() => {
+    const onDrag = () => { following.current = false }
+    map.on('dragstart', onDrag)
+    return () => { map.off('dragstart', onDrag) }
+  }, [map])
+
+  // Only re-center on GPS updates while in following mode
   useEffect(() => {
     if (gpsGranted && !firstGrant.current) {
       firstGrant.current = true
+      following.current = true
       map.setView(center, 13, { animate: true })
-    } else if (firstGrant.current) {
+    } else if (firstGrant.current && following.current) {
       map.setView(center, map.getZoom(), { animate: true })
     }
   }, [center, gpsGranted, map])
-  // Force snap on button tap
+
+  // Button press: re-enable following and snap to position
   useEffect(() => {
-    if (forceTick > 0) map.setView(center, Math.max(map.getZoom(), 14), { animate: true })
+    if (forceTick > 0) {
+      following.current = true
+      map.setView(center, Math.max(map.getZoom(), 14), { animate: true })
+    }
   }, [forceTick]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return null
 }
 
@@ -1255,11 +1271,17 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
             </div>
           )}
           <button
-            className="bg-accent text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg text-xl active:scale-90 transition-transform"
+            className="bg-accent text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg active:scale-90 transition-transform"
             onClick={() => { if (!isTracking) setTracking(true); setForceCenterTick(t => t + 1) }}
             title="Center to my location"
           >
-            📍
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <circle cx="11" cy="11" r="5.5" />
+              <line x1="11" y1="1" x2="11" y2="5" />
+              <line x1="11" y1="17" x2="11" y2="21" />
+              <line x1="1" y1="11" x2="5" y2="11" />
+              <line x1="17" y1="11" x2="21" y2="11" />
+            </svg>
           </button>
         </div>
       </div>
