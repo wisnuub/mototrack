@@ -56,6 +56,11 @@ function EventDetailModal({ event, onClose }: { event: MotoEvent; onClose: () =>
   const eventInteractions = useStore(s => s.eventInteractions)
   const toggleInterest = useStore(s => s.toggleEventInterest)
   const markAttending = useStore(s => s.markEventAttending)
+  const conversations = useStore(s => s.conversations)
+  const sendMessage = useStore(s => s.sendMessage)
+  const setActiveConversation = useStore(s => s.setActiveConversation)
+  const setActiveTab = useStore(s => s.setActiveTab)
+  const [showSharePicker, setShowSharePicker] = useState(false)
 
   const isInterested = eventInteractions.some(i => i.eventId === event.id && i.type === 'interested')
   const isAttending  = eventInteractions.some(i => i.eventId === event.id && i.type === 'attending')
@@ -66,6 +71,22 @@ function EventDetailModal({ event, onClose }: { event: MotoEvent; onClose: () =>
       ? `https://wa.me/${event.whatsappNumber}?text=${encodeURIComponent(`Halo, saya ingin daftar event: ${event.title}`)}`
       : null)
     if (url) window.open(url, '_blank', 'noopener noreferrer')
+  }
+
+  const shareText = `🏍️ ${event.title}\n📅 ${event.date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}\n📍 ${event.location}\n#MotoTrack`
+
+  const handleShareToChat = async (convId: string) => {
+    await setActiveConversation(convId)
+    await sendMessage(convId, shareText)
+    setShowSharePicker(false)
+    onClose()
+    setActiveTab('chat')
+  }
+
+  const handleShareExternal = async () => {
+    if (navigator.share) await navigator.share({ title: event.title, text: shareText }).catch(() => {})
+    else await navigator.clipboard.writeText(shareText).catch(() => {})
+    setShowSharePicker(false)
   }
 
   const categoryLabels: Record<string, string> = {
@@ -231,8 +252,52 @@ function EventDetailModal({ event, onClose }: { event: MotoEvent; onClose: () =>
           >
             {isInterested ? '★ Interested' : '☆ Mark as Interested'}
           </button>
+
+          <button
+            onClick={() => setShowSharePicker(true)}
+            className="w-full py-2.5 rounded-2xl text-sm font-semibold border border-white/10 text-gray-400 bg-bg-card flex items-center justify-center gap-2"
+          >
+            <ExternalLink size={14} /> Share Event
+          </button>
         </div>
       </div>
+
+      {/* Share picker */}
+      {showSharePicker && (
+        <div className="absolute inset-0 z-10 flex items-end justify-center rounded-t-3xl overflow-hidden">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSharePicker(false)} />
+          <div className="relative bg-bg-secondary rounded-t-3xl w-full animate-slide-up">
+            <div className="px-5 pt-5 pb-3 border-b border-white/5 flex items-center justify-between">
+              <h3 className="text-white font-bold text-base">Share Event</h3>
+              <button onClick={() => setShowSharePicker(false)} className="text-gray-400"><X size={18} /></button>
+            </div>
+            <div className="px-5 py-3 space-y-1 max-h-60 overflow-y-auto">
+              {conversations.length === 0 ? (
+                <p className="text-gray-500 text-sm py-4 text-center">No conversations yet</p>
+              ) : conversations.map(conv => (
+                <button key={conv.id} onClick={() => handleShareToChat(conv.id)}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl bg-bg-card border border-white/5 active:scale-[0.98] text-left">
+                  <div className="w-10 h-10 rounded-full bg-accent/15 flex items-center justify-center text-lg flex-shrink-0">
+                    {conv.emoji ?? (conv.type === 'group' ? '👥' : '💬')}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-semibold truncate">{conv.name}</p>
+                    <p className="text-gray-500 text-xs capitalize">{conv.type === 'group' ? 'Group' : 'Direct message'}</p>
+                  </div>
+                  <span className="text-accent text-xs font-semibold flex-shrink-0">Send →</span>
+                </button>
+              ))}
+            </div>
+            <div className="px-5 py-3 border-t border-white/5">
+              <button onClick={handleShareExternal}
+                className="w-full flex items-center justify-center gap-2 bg-bg-card border border-white/10 text-white font-semibold py-3 rounded-2xl text-sm active:scale-95">
+                <ExternalLink size={15} /> Share via device
+              </button>
+            </div>
+            <div className="h-4 pb-safe" />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -839,6 +904,11 @@ function RouteDetailSheet({
     '🏍️': Math.floor(trip.saves * 0.8), '⭐': Math.floor(trip.likes * 0.4),
   }))
   const [myReactions, setMyReactions] = useState<Set<string>>(new Set())
+  const [showSharePicker, setShowSharePicker] = useState(false)
+  const conversations = useStore(s => s.conversations)
+  const sendMessage = useStore(s => s.sendMessage)
+  const setActiveConversation = useStore(s => s.setActiveConversation)
+  const setActiveTab = useStore(s => s.setActiveTab)
   const path = routeSvgPath(trip.route, 280, 100)
   const first = trip.route[0], last = trip.route[trip.route.length - 1]
 
@@ -851,10 +921,20 @@ function RouteDetailSheet({
     })
   }
 
-  const handleShare = async () => {
-    const text = `🏍️ ${trip.title}\n📏 ${trip.distanceKm} km · ~${trip.estimatedHours}h · ${trip.difficulty}\n📍 ${trip.region}\n#MotoTrack`
-    if (navigator.share) await navigator.share({ title: trip.title, text }).catch(() => {})
-    else await navigator.clipboard.writeText(text).catch(() => {})
+  const shareText = `🏍️ ${trip.title}\n📏 ${trip.distanceKm} km · ~${trip.estimatedHours}h · ${trip.difficulty}\n📍 ${trip.region}\n#MotoTrack`
+
+  const handleShareToChat = async (convId: string) => {
+    await setActiveConversation(convId)
+    await sendMessage(convId, shareText)
+    setShowSharePicker(false)
+    onClose()
+    setActiveTab('chat')
+  }
+
+  const handleShareExternal = async () => {
+    if (navigator.share) await navigator.share({ title: trip.title, text: shareText }).catch(() => {})
+    else await navigator.clipboard.writeText(shareText).catch(() => {})
+    setShowSharePicker(false)
   }
 
   return (
@@ -970,7 +1050,7 @@ function RouteDetailSheet({
               <span className="text-xl">🗺️</span> Show Map
             </button>
             <button
-              onClick={handleShare}
+              onClick={() => setShowSharePicker(true)}
               className="flex flex-col items-center gap-1.5 bg-bg-card border border-white/10 text-white py-3 rounded-2xl text-xs font-semibold active:scale-95 transition-all"
             >
               <span className="text-xl">↗️</span> Share
@@ -985,6 +1065,48 @@ function RouteDetailSheet({
           <div className="h-2 pb-safe" />
         </div>
       </div>
+
+      {/* Share picker */}
+      {showSharePicker && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSharePicker(false)} />
+          <div className="relative bg-bg-secondary rounded-t-3xl w-full max-w-lg animate-slide-up">
+            <div className="px-5 pt-5 pb-3 border-b border-white/5 flex items-center justify-between">
+              <h3 className="text-white font-bold text-base">Share Route</h3>
+              <button onClick={() => setShowSharePicker(false)} className="text-gray-400"><X size={18} /></button>
+            </div>
+            <div className="px-5 py-3 space-y-1 max-h-72 overflow-y-auto">
+              {conversations.length === 0 ? (
+                <p className="text-gray-500 text-sm py-4 text-center">No conversations yet — start a chat first</p>
+              ) : conversations.map(conv => (
+                <button
+                  key={conv.id}
+                  onClick={() => handleShareToChat(conv.id)}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl bg-bg-card border border-white/5 active:scale-[0.98] transition-all text-left"
+                >
+                  <div className="w-10 h-10 rounded-full bg-accent/15 flex items-center justify-center text-lg flex-shrink-0">
+                    {conv.emoji ?? (conv.type === 'group' ? '👥' : '💬')}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-semibold truncate">{conv.name}</p>
+                    <p className="text-gray-500 text-xs capitalize">{conv.type === 'group' ? 'Group' : 'Direct message'}</p>
+                  </div>
+                  <span className="text-accent text-xs font-semibold flex-shrink-0">Send →</span>
+                </button>
+              ))}
+            </div>
+            <div className="px-5 py-3 border-t border-white/5">
+              <button
+                onClick={handleShareExternal}
+                className="w-full flex items-center justify-center gap-2 bg-bg-card border border-white/10 text-white font-semibold py-3 rounded-2xl text-sm active:scale-95 transition-all"
+              >
+                <ExternalLink size={15} /> Share via device (copy / other apps)
+              </button>
+            </div>
+            <div className="h-4 pb-safe" />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

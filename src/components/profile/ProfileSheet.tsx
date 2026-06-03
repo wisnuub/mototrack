@@ -632,6 +632,148 @@ function RideSessionCard({ session }: { session: RideSession }) {
   )
 }
 
+// ── My Rides tab ────────────────────────────────────────────────
+
+function MyRidesTab({
+  myRides, activeRideSession, stopRideSession,
+}: {
+  myRides: RideSession[]
+  activeRideSession: RideSession | null
+  stopRideSession: () => void
+}) {
+  const [ridePrivacy, setRidePrivacy] = useState<Record<string, boolean>>({})
+  return (
+    <div className="space-y-3">
+      {activeRideSession && (
+        <div className="bg-green-400/10 border border-green-400/30 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <p className="text-green-400 font-bold text-sm">Ride in Progress</p>
+            </div>
+            <button onClick={stopRideSession} className="bg-moto-red/20 text-moto-red text-xs font-semibold px-3 py-1.5 rounded-full">Stop</button>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div><p className="text-white font-bold">{activeRideSession.distanceKm.toFixed(2)}</p><p className="text-gray-500 text-xs">km</p></div>
+            <div><p className="text-white font-bold">{activeRideSession.maxSpeedKmh}</p><p className="text-gray-500 text-xs">top km/h</p></div>
+            <div><p className="text-white font-bold">{activeRideSession.route.length}</p><p className="text-gray-500 text-xs">waypoints</p></div>
+          </div>
+        </div>
+      )}
+      {myRides.map(r => <RideSessionCard key={r.id} session={r} />)}
+      {RIDE_HISTORY.map(ride => {
+        const isPrivate = ridePrivacy[ride.id] ?? ride.isPrivate
+        const dH = Math.floor(ride.durationMin / 60), dM = ride.durationMin % 60
+        return (
+          <div key={ride.id} className="bg-bg-card rounded-2xl border border-white/5 overflow-hidden">
+            <div className="p-4 pb-3">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-bg-surface rounded-xl flex items-center justify-center text-2xl">{ride.emoji}</div>
+                  <div>
+                    <p className="text-white font-semibold text-sm">{ride.title}</p>
+                    <p className="text-gray-500 text-xs">{formatDistanceToNow(ride.date, { addSuffix: true })}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setRidePrivacy(p => ({ ...p, [ride.id]: !isPrivate }))}
+                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full transition-all ${isPrivate ? 'bg-gray-600/20 text-gray-400' : 'bg-moto-green/20 text-moto-green'}`}
+                >
+                  {isPrivate ? <EyeOff size={11} /> : <Eye size={11} />}
+                  {isPrivate ? 'Private' : 'Public'}
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 px-4 pb-3">
+              {[
+                { label: 'Distance', val: `${ride.distanceKm} km` },
+                { label: 'Time', val: dH > 0 ? `${dH}h ${dM}m` : `${dM}m` },
+                { label: 'Avg', val: `${ride.avgSpeedKmh} km/h` },
+                { label: 'Top', val: `${ride.maxSpeedKmh} km/h` },
+              ].map(s => (
+                <div key={s.label} className="text-center">
+                  <p className="text-white font-bold text-sm">{s.val}</p>
+                  <p className="text-gray-500 text-[10px]">{s.label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="px-4 pb-3 border-t border-white/5 pt-2.5">
+              <p className="text-gray-500 text-[10px] truncate">📍 {ride.route}</p>
+              {ride.riders.length > 0 && <p className="text-gray-600 text-[10px] mt-0.5">with {ride.riders.join(', ')}</p>}
+            </div>
+          </div>
+        )
+      })}
+      {myRides.length === 0 && RIDE_HISTORY.length === 0 && (
+        <EmptyState icon="🏍️" text="No rides yet" sub="Start a ride to record your stats" />
+      )}
+    </div>
+  )
+}
+
+// ── Events tab ───────────────────────────────────────────────────
+
+type EvtFilter = 'going' | 'saved' | 'completed'
+
+function EventsTab({
+  eventInteractions, events,
+}: {
+  eventInteractions: { eventId: string; type: string }[]
+  events: import('../../types').MotoEvent[]
+}) {
+  const [evtFilter, setEvtFilter] = useState<EvtFilter>('going')
+  const now = new Date()
+  const goingIds  = new Set(eventInteractions.filter(i => i.type === 'attending').map(i => i.eventId))
+  const savedIds  = new Set(eventInteractions.filter(i => i.type === 'interested').map(i => i.eventId))
+  const goingEvts = events.filter(e => goingIds.has(e.id) && e.date >= now)
+  const savedEvts = events.filter(e => savedIds.has(e.id) && !goingIds.has(e.id))
+  const doneEvts  = events.filter(e => goingIds.has(e.id) && e.date < now)
+  const list = evtFilter === 'going' ? goingEvts : evtFilter === 'saved' ? savedEvts : doneEvts
+  return (
+    <div>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {([
+          { id: 'going'     as EvtFilter, label: `Going (${goingEvts.length})`          },
+          { id: 'saved'     as EvtFilter, label: `Saved (${savedEvts.length})`          },
+          { id: 'completed' as EvtFilter, label: `Completed (${doneEvts.length})`       },
+        ]).map(f => (
+          <button key={f.id} onClick={() => setEvtFilter(f.id)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all ${evtFilter === f.id ? 'bg-accent text-white' : 'bg-bg-card text-gray-400'}`}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {list.length === 0 ? (
+        <EmptyState
+          icon={evtFilter === 'going' ? '🎫' : evtFilter === 'saved' ? '🔖' : '✅'}
+          text={evtFilter === 'going' ? 'No upcoming events' : evtFilter === 'saved' ? 'No saved events' : 'No completed events'}
+          sub={evtFilter === 'going' ? 'Tap "Going" on events in Explore' : evtFilter === 'saved' ? 'Tap "Interested" on events in Explore' : 'Events you attended will show here'}
+        />
+      ) : (
+        <div className="space-y-3">
+          {list.map(evt => (
+            <div key={evt.id} className={`bg-bg-card rounded-2xl border p-4 ${evtFilter === 'completed' ? 'border-moto-green/20 opacity-70' : 'border-white/5'}`}>
+              <div className="flex items-start gap-3">
+                <div className="w-12 h-12 bg-bg-surface rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                  {'emoji' in evt ? (evt as any).emoji : '🏍️'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-semibold text-sm truncate">{evt.title}</p>
+                  <p className="text-gray-500 text-xs mt-0.5">{format(evt.date, 'EEE, d MMM yyyy · HH:mm')}</p>
+                  <p className="text-gray-600 text-xs mt-0.5 truncate">{evt.location}</p>
+                </div>
+                {evtFilter === 'completed' && <span className="flex-shrink-0 text-moto-green text-lg">✅</span>}
+                {evtFilter === 'going' && <span className="flex-shrink-0 bg-accent/20 text-accent text-[10px] font-bold px-2 py-1 rounded-full">Going</span>}
+                {evtFilter === 'saved' && <span className="flex-shrink-0 bg-accent-amber/20 text-accent-amber text-[10px] font-bold px-2 py-1 rounded-full">Saved</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Profile Sheet ───────────────────────────────────────────────
 
 type ProfileTab = 'posts' | 'myrides' | 'service' | 'events'
@@ -777,147 +919,18 @@ export default function ProfileSheet({ onClose }: { onClose: () => void }) {
               : myServices.map(p => <ActivityPostCard key={p.id} post={p} showDelete />)
           )}
 
-          {tab === 'myrides' && (() => {
-            const [ridePivacy, setRidePrivacy] = useState<Record<string, boolean>>({})
-            return (
-              <div className="space-y-3">
-                {/* Live session banner */}
-                {activeRideSession && (
-                  <div className="bg-green-400/10 border border-green-400/30 rounded-2xl p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                        <p className="text-green-400 font-bold text-sm">Ride in Progress</p>
-                      </div>
-                      <button onClick={stopRideSession} className="bg-moto-red/20 text-moto-red text-xs font-semibold px-3 py-1.5 rounded-full">Stop</button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div><p className="text-white font-bold">{activeRideSession.distanceKm.toFixed(2)}</p><p className="text-gray-500 text-xs">km</p></div>
-                      <div><p className="text-white font-bold">{activeRideSession.maxSpeedKmh}</p><p className="text-gray-500 text-xs">top km/h</p></div>
-                      <div><p className="text-white font-bold">{activeRideSession.route.length}</p><p className="text-gray-500 text-xs">waypoints</p></div>
-                    </div>
-                  </div>
-                )}
+          {tab === 'myrides' && (
+            <MyRidesTab
+              myRides={myRides}
+              activeRideSession={activeRideSession}
+              stopRideSession={stopRideSession}
+            />
+          )}
 
-                {/* GPS-tracked sessions */}
-                {myRides.length > 0 && myRides.map(r => <RideSessionCard key={r.id} session={r} />)}
+          {tab === 'events' && (
+            <EventsTab eventInteractions={eventInteractions} events={events} />
+          )}
 
-                {/* Historical rides from mock data */}
-                {RIDE_HISTORY.map(ride => {
-                  const isPrivate = ridePivacy[ride.id] ?? ride.isPrivate
-                  const dH = Math.floor(ride.durationMin / 60), dM = ride.durationMin % 60
-                  return (
-                    <div key={ride.id} className="bg-bg-card rounded-2xl border border-white/5 overflow-hidden">
-                      <div className="p-4 pb-3">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-bg-surface rounded-xl flex items-center justify-center text-2xl">{ride.emoji}</div>
-                            <div>
-                              <p className="text-white font-semibold text-sm">{ride.title}</p>
-                              <p className="text-gray-500 text-xs">{formatDistanceToNow(ride.date, { addSuffix: true })}</p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setRidePrivacy(p => ({ ...p, [ride.id]: !isPrivate }))}
-                            className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full transition-all ${isPrivate ? 'bg-gray-600/20 text-gray-400' : 'bg-moto-green/20 text-moto-green'}`}
-                          >
-                            {isPrivate ? <EyeOff size={11} /> : <Eye size={11} />}
-                            {isPrivate ? 'Private' : 'Public'}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-4 gap-0 px-4 pb-3">
-                        {[
-                          { label: 'Distance', val: `${ride.distanceKm} km` },
-                          { label: 'Time', val: dH > 0 ? `${dH}h ${dM}m` : `${dM}m` },
-                          { label: 'Avg', val: `${ride.avgSpeedKmh} km/h` },
-                          { label: 'Top', val: `${ride.maxSpeedKmh} km/h` },
-                        ].map(s => (
-                          <div key={s.label} className="text-center">
-                            <p className="text-white font-bold text-sm">{s.val}</p>
-                            <p className="text-gray-500 text-[10px]">{s.label}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="px-4 pb-3 border-t border-white/5 pt-2.5">
-                        <p className="text-gray-500 text-[10px] truncate">📍 {ride.route}</p>
-                        {ride.riders.length > 0 && (
-                          <p className="text-gray-600 text-[10px] mt-0.5">with {ride.riders.join(', ')}</p>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-
-                {myRides.length === 0 && RIDE_HISTORY.length === 0 && (
-                  <EmptyState icon="🏍️" text="No rides yet" sub="Start a ride to record your stats" />
-                )}
-              </div>
-            )
-          })()}
-
-          {tab === 'events' && (() => {
-            const [evtFilter, setEvtFilter] = useState<'going' | 'saved' | 'completed'>('going')
-            const now = new Date()
-            const goingIds   = new Set(eventInteractions.filter(i => i.type === 'attending').map(i => i.eventId))
-            const savedIds   = new Set(eventInteractions.filter(i => i.type === 'interested').map(i => i.eventId))
-            const goingEvts  = events.filter(e => goingIds.has(e.id) && e.date >= now)
-            const savedEvts  = events.filter(e => savedIds.has(e.id) && !goingIds.has(e.id))
-            const doneEvts   = events.filter(e => goingIds.has(e.id) && e.date < now)
-            const list = evtFilter === 'going' ? goingEvts : evtFilter === 'saved' ? savedEvts : doneEvts
-            return (
-              <div>
-                {/* Filter chips */}
-                <div className="flex gap-2 mb-4">
-                  {([
-                    { id: 'going', label: `Going (${goingEvts.length})` },
-                    { id: 'saved', label: `Saved (${savedEvts.length})` },
-                    { id: 'completed', label: `Completed (${doneEvts.length})` },
-                  ] as { id: typeof evtFilter; label: string }[]).map(f => (
-                    <button
-                      key={f.id}
-                      onClick={() => setEvtFilter(f.id)}
-                      className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all ${evtFilter === f.id ? 'bg-accent text-white' : 'bg-bg-card text-gray-400'}`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-
-                {list.length === 0 ? (
-                  <EmptyState
-                    icon={evtFilter === 'going' ? '🎫' : evtFilter === 'saved' ? '🔖' : '✅'}
-                    text={evtFilter === 'going' ? "No upcoming events" : evtFilter === 'saved' ? "No saved events" : "No completed events"}
-                    sub={evtFilter === 'going' ? 'Tap "Going" on events in Explore' : evtFilter === 'saved' ? 'Tap "Interested" on events in Explore' : 'Events you attended will show here'}
-                  />
-                ) : (
-                  <div className="space-y-3">
-                    {list.map(evt => (
-                      <div key={evt.id} className={`bg-bg-card rounded-2xl border p-4 ${evtFilter === 'completed' ? 'border-moto-green/20 opacity-70' : 'border-white/5'}`}>
-                        <div className="flex items-start gap-3">
-                          <div className="w-12 h-12 bg-bg-surface rounded-xl flex items-center justify-center text-2xl flex-shrink-0">{'emoji' in evt ? (evt as any).emoji : '🏍️'}</div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-white font-semibold text-sm truncate">{evt.title}</p>
-                            <p className="text-gray-500 text-xs mt-0.5">{format(evt.date, 'EEE, d MMM yyyy · HH:mm')}</p>
-                            <p className="text-gray-600 text-xs mt-0.5 truncate">{evt.location}</p>
-                          </div>
-                          {evtFilter === 'completed' && (
-                            <span className="flex-shrink-0 text-moto-green text-lg">✅</span>
-                          )}
-                          {evtFilter === 'going' && (
-                            <span className="flex-shrink-0 bg-accent/20 text-accent text-[10px] font-bold px-2 py-1 rounded-full">Going</span>
-                          )}
-                          {evtFilter === 'saved' && (
-                            <span className="flex-shrink-0 bg-accent-amber/20 text-accent-amber text-[10px] font-bold px-2 py-1 rounded-full">Saved</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })()}
         </div>
       </div>
 

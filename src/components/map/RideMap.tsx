@@ -8,6 +8,7 @@ import { useRideSimulation } from '../../hooks/useRideSimulation'
 import { INDONESIA_CENTER, KINTAMANI_ROUTE } from '../../data/mockData'
 import { planRoute } from '../../lib/routing'
 import type { NavStep } from '../../lib/routing'
+import { detectTolls, formatTollSummary } from '../../lib/tolls'
 import type { Rider } from '../../types'
 
 type RideMode = 'idle' | 'solo' | 'group' | 'paused'
@@ -702,6 +703,7 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
   const [previewName, setPreviewName] = useState<string | null>(null)
   const [previewDistM, setPreviewDistM] = useState(0)
   const [previewDurS, setPreviewDurS] = useState(0)
+  const [previewToll, setPreviewToll] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [fitBoundsTick, setFitBoundsTick] = useState(0)
 
@@ -748,6 +750,7 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
                   setPreviewPolyline(res.route.routeGeometry)
                   setPreviewDistM(res.route.totalDistance)
                   setPreviewDurS(res.route.totalDuration)
+                  setPreviewToll(formatTollSummary(detectTolls(res.route.routeGeometry)))
                   setPreviewStops(waypoints.map((w, i) => ({
                     coords: [w.lat, w.lng] as [number, number],
                     name: w.name,
@@ -1258,15 +1261,14 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
                       {previewDistM > 0 && <span className="text-blue-300 text-xs">{(previewDistM / 1000).toFixed(1)} km</span>}
                       {previewDurS > 0 && <span className="text-blue-300 text-xs">~{Math.ceil(previewDurS / 60)} min</span>}
                       {previewStops.length > 2 && <span className="text-blue-300 text-xs">{previewStops.length - 2} stop{previewStops.length - 2 > 1 ? 's' : ''}</span>}
-                      {/* Basic toll detection: Bali Mandara toll road area */}
-                      {previewStops.some(s => s.coords[0] > -8.73 && s.coords[0] < -8.67 && s.coords[1] > 115.17 && s.coords[1] < 115.25) && (
-                        <span className="text-accent-amber text-xs font-semibold">🛣️ Toll ~Rp 5.500</span>
+                      {previewToll && (
+                        <span className="text-accent-amber text-xs font-semibold">{previewToll}</span>
                       )}
                     </div>
                   )}
                 </div>
                 <button
-                  onClick={() => { setPreviewName(null); setPreviewPolyline([]); setPreviewStops([]); setPreviewDistM(0); setPreviewDurS(0) }}
+                  onClick={() => { setPreviewName(null); setPreviewPolyline([]); setPreviewStops([]); setPreviewDistM(0); setPreviewDurS(0); setPreviewToll(null) }}
                   className="text-gray-400 text-lg leading-none ml-1 flex-shrink-0"
                 >✕</button>
               </div>
@@ -1392,20 +1394,22 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           )}
         </div>
 
-        {/* GPS accuracy badge + track/center button */}
+        {/* GPS accuracy badge — top left */}
+        {gpsState === 'granted' && gpsAccuracy !== null && (
+          <div className={`absolute top-3 left-3 z-10 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold border backdrop-blur-sm ${
+            (gpsAccuracy <= 20 || hasGyro)
+              ? 'bg-moto-green/20 border-moto-green/30 text-moto-green'
+              : gpsAccuracy <= 100
+              ? 'bg-accent-amber/20 border-accent-amber/30 text-accent-amber'
+              : 'bg-moto-red/20 border-moto-red/30 text-moto-red'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${(gpsAccuracy <= 20 || hasGyro) ? 'bg-moto-green' : gpsAccuracy <= 100 ? 'bg-accent-amber' : 'bg-moto-red'}`} />
+            {hasGyro ? '📱 Phone · GPS' : gpsAccuracy <= 20 ? '📍 GPS' : gpsAccuracy <= 100 ? `±${gpsAccuracy}m` : `±${gpsAccuracy}m · weak`}
+          </div>
+        )}
+
+        {/* Center button — bottom right only */}
         <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1.5">
-          {gpsState === 'granted' && gpsAccuracy !== null && (
-            <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold border ${
-              (gpsAccuracy <= 20 || hasGyro)
-                ? 'bg-moto-green/20 border-moto-green/30 text-moto-green'
-                : gpsAccuracy <= 100
-                ? 'bg-accent-amber/20 border-accent-amber/30 text-accent-amber'
-                : 'bg-moto-red/20 border-moto-red/30 text-moto-red'
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${(gpsAccuracy <= 20 || hasGyro) ? 'bg-moto-green' : gpsAccuracy <= 100 ? 'bg-accent-amber' : 'bg-moto-red'}`} />
-              {hasGyro ? '📱 Phone · GPS' : gpsAccuracy <= 20 ? '📍 GPS' : gpsAccuracy <= 100 ? `±${gpsAccuracy}m` : `±${gpsAccuracy}m · weak`}
-            </div>
-          )}
           <button
             className="bg-accent text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg active:scale-90 transition-transform"
             onClick={() => { if (!isTracking) setTracking(true); setForceCenterTick(t => t + 1) }}
