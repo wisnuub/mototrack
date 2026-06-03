@@ -1,10 +1,12 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useStore } from '../../store/useStore'
 import { Heart, Bookmark, MapPin, Clock, Zap, Users, Eye, EyeOff, Star, ChevronRight, ExternalLink, Ticket, ShoppingBag, X } from 'lucide-react'
 import type { TripTemplate, Attraction, MotoEvent, ShopProduct, CommunityMod, BadgeType, InstagramPost, InstagramAccount } from '../../types'
 import { MOCK_ATTRACTIONS, MOCK_COMMUNITY_MODS } from '../../data/mockData'
 import EventsMapPanel from './EventsMapPanel'
 import { formatDistanceToNow, format } from 'date-fns'
+import { fetchPlaceDetails, isPlacesReady } from '../../lib/places'
+import type { PlaceDetails } from '../../lib/places'
 
 // ─── Ride History ──────────────────────────────────────────────────────────────
 
@@ -419,12 +421,97 @@ function ProductCard({ product, size = 'full' }: { product: ShopProduct; size?: 
   )
 }
 
+// ─── Mod Detail Sheet ─────────────────────────────────────────────────────────
+
+function ModDetailSheet({ mod, onClose }: { mod: CommunityMod; onClose: () => void }) {
+  const stars = Math.round(mod.avgRating)
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-bg-secondary rounded-t-3xl w-full max-w-lg animate-slide-up overflow-hidden">
+        {/* Header banner */}
+        <div className="h-36 flex items-center justify-center text-7xl relative"
+             style={{ background: 'linear-gradient(135deg,#ff6b3518,#0a84ff18)' }}>
+          {mod.imageEmoji}
+          <button onClick={onClose}
+            className="absolute top-4 right-4 w-9 h-9 bg-black/40 rounded-full flex items-center justify-center text-white">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-5 py-5 space-y-4">
+          {/* Title + meta */}
+          <div>
+            <h3 className="text-white font-bold text-lg leading-tight">{mod.name}</h3>
+            <p className="text-gray-400 text-sm mt-0.5">{mod.brand} · <span className="capitalize">{mod.category.replace(/_/g, ' ')}</span></p>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-bg-card rounded-2xl p-3 text-center border border-white/5">
+              <p className="text-moto-green font-black text-base leading-none">{mod.riderCount.toLocaleString()}</p>
+              <p className="text-gray-500 text-[10px] mt-1">Riders using</p>
+            </div>
+            <div className="bg-bg-card rounded-2xl p-3 text-center border border-white/5">
+              <div className="flex justify-center mb-0.5">
+                <StarRow rating={mod.avgRating} size={10} />
+              </div>
+              <p className="text-accent-amber font-bold text-sm">{mod.avgRating}</p>
+              <p className="text-gray-500 text-[10px]">Rating</p>
+            </div>
+            <div className="bg-bg-card rounded-2xl p-3 text-center border border-white/5">
+              <p className="text-accent font-bold text-sm leading-tight">{mod.priceRange}</p>
+              <p className="text-gray-500 text-[10px] mt-1">Price range</p>
+            </div>
+          </div>
+
+          {/* Community verdict */}
+          <div className="bg-bg-card rounded-2xl p-4 border border-white/5">
+            <p className="text-white font-semibold text-sm mb-2">Community Verdict</p>
+            <div className="flex items-center gap-2 mb-2">
+              <StarRow rating={mod.avgRating} size={14} />
+              <span className="text-accent-amber font-black text-lg">{mod.avgRating}</span>
+              <span className="text-gray-500 text-xs">/ 5.0</span>
+            </div>
+            <p className="text-gray-400 text-xs leading-relaxed">
+              {mod.riderCount.toLocaleString()} MotoTrack riders have installed this mod.{' '}
+              {stars >= 5 ? 'Overwhelmingly recommended by the community.' :
+               stars >= 4 ? 'Highly rated with great community feedback.' :
+               stars >= 3 ? 'Solid choice with generally positive reviews.' :
+               'Mixed reviews — check the shop for more details.'}
+            </p>
+          </div>
+
+          {/* Action */}
+          {mod.buyUrl ? (
+            <button
+              onClick={() => window.open(mod.buyUrl, '_blank', 'noopener noreferrer')}
+              className="w-full bg-accent text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 text-sm active:scale-95 transition-all"
+            >
+              <ShoppingBag size={16} /> Shop This Mod
+            </button>
+          ) : (
+            <div className="bg-bg-card border border-white/5 rounded-2xl py-4 text-center">
+              <p className="text-gray-500 text-sm">No shop link available</p>
+            </div>
+          )}
+          <div className="h-2 pb-safe" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── CommunityModCard ─────────────────────────────────────────────────────────
 
-function CommunityModCard({ mod }: { mod: CommunityMod }) {
+function CommunityModCard({ mod, onClick }: { mod: CommunityMod; onClick: () => void }) {
   return (
-    <div className="flex-shrink-0 w-44 bg-bg-card rounded-2xl p-3 border border-white/5">
-      <div className="w-full h-16 bg-bg-surface rounded-xl flex items-center justify-center text-4xl mb-2">
+    <button
+      onClick={onClick}
+      className="flex-shrink-0 w-44 bg-bg-card rounded-2xl p-3 border border-white/5 text-left active:scale-95 transition-all"
+    >
+      <div className="w-full h-16 bg-bg-surface rounded-xl flex items-center justify-center text-4xl mb-2"
+           style={{ background: 'linear-gradient(135deg,#ff6b3510,#0a84ff10)' }}>
         {mod.imageEmoji}
       </div>
       <p className="text-white text-xs font-bold leading-tight">{mod.name}</p>
@@ -436,30 +523,243 @@ function CommunityModCard({ mod }: { mod: CommunityMod }) {
         <span className="text-gray-400 text-[10px]">{mod.avgRating}</span>
       </div>
       <p className="text-accent text-xs font-semibold mt-1">{mod.priceRange}</p>
-      {mod.buyUrl && (
-        <button
-          onClick={() => window.open(mod.buyUrl, '_blank', 'noopener noreferrer')}
-          className="w-full mt-2 text-xs text-gray-400 bg-bg-surface py-1.5 rounded-xl flex items-center justify-center gap-1"
-        >
-          Shop <ExternalLink size={9} />
-        </button>
-      )}
+      <p className="text-gray-600 text-[10px] mt-1">Tap for details →</p>
+    </button>
+  )
+}
+
+// ─── Place Detail Sheet ───────────────────────────────────────────────────────
+
+const PLACE_ICONS: Record<string, string> = {
+  viewpoint: '🌄', temple: '🛕', food: '🍽️', fuel: '⛽',
+  beach: '🏖️', waterfall: '💧', market: '🏪', mechanic: '🔧',
+}
+
+const TYPE_GRADIENTS: Record<string, string> = {
+  viewpoint: 'linear-gradient(135deg,#1a3a2a,#0d2137)',
+  temple:    'linear-gradient(135deg,#2a1a3a,#1a0d37)',
+  food:      'linear-gradient(135deg,#3a2a0d,#2a1a00)',
+  fuel:      'linear-gradient(135deg,#1a2a3a,#0d1a2a)',
+  beach:     'linear-gradient(135deg,#0d2a3a,#001a2a)',
+  waterfall: 'linear-gradient(135deg,#0d1a3a,#001030)',
+  market:    'linear-gradient(135deg,#2a1a0d,#1a0d00)',
+  mechanic:  'linear-gradient(135deg,#1a1a1a,#0d0d0d)',
+}
+
+function StarRow({ rating, size = 12 }: { rating: number; size?: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map(i => (
+        <Star
+          key={i}
+          size={size}
+          className={i <= Math.round(rating) ? 'text-accent-amber fill-accent-amber' : 'text-gray-600'}
+        />
+      ))}
+    </div>
+  )
+}
+
+function PlaceDetailSheet({
+  attraction,
+  onClose,
+  onShowOnMap,
+}: {
+  attraction: Attraction
+  onClose: () => void
+  onShowOnMap: (a: Attraction) => void
+}) {
+  const [details, setDetails] = useState<PlaceDetails | null>(null)
+  const [loading, setLoading] = useState(isPlacesReady())
+  const [photoIdx, setPhotoIdx] = useState(0)
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${attraction.position.lat},${attraction.position.lng}`
+
+  useEffect(() => {
+    if (!isPlacesReady()) return
+    setLoading(true)
+    fetchPlaceDetails(attraction.name, attraction.position.lat, attraction.position.lng)
+      .then(d => setDetails(d))
+      .finally(() => setLoading(false))
+  }, [attraction.id])
+
+  const photos = details?.photos ?? []
+  const reviews = details?.reviews ?? []
+  const displayRating = details?.rating ?? attraction.rating
+  const totalRatings = details?.totalRatings
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-bg-secondary rounded-t-3xl w-full max-w-lg animate-slide-up overflow-hidden max-h-[92vh] flex flex-col">
+
+        {/* Photo carousel / placeholder */}
+        <div className="relative flex-shrink-0 h-52 overflow-hidden">
+          {loading ? (
+            <div className="w-full h-full flex items-center justify-center"
+                 style={{ background: TYPE_GRADIENTS[attraction.type] ?? TYPE_GRADIENTS.viewpoint }}>
+              <span className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+            </div>
+          ) : photos.length > 0 ? (
+            <>
+              <img
+                key={photoIdx}
+                src={photos[photoIdx]}
+                className="w-full h-full object-cover"
+                alt={attraction.name}
+              />
+              {/* Photo dots */}
+              {photos.length > 1 && (
+                <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
+                  {photos.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setPhotoIdx(i)}
+                      className={`w-1.5 h-1.5 rounded-full transition-all ${i === photoIdx ? 'bg-white scale-125' : 'bg-white/40'}`}
+                    />
+                  ))}
+                </div>
+              )}
+              {/* Prev / next */}
+              {photos.length > 1 && (
+                <>
+                  <button onClick={() => setPhotoIdx(i => (i - 1 + photos.length) % photos.length)}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/40 rounded-full flex items-center justify-center text-white text-sm">‹</button>
+                  <button onClick={() => setPhotoIdx(i => (i + 1) % photos.length)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/40 rounded-full flex items-center justify-center text-white text-sm">›</button>
+                </>
+              )}
+            </>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-8xl"
+                 style={{ background: TYPE_GRADIENTS[attraction.type] ?? TYPE_GRADIENTS.viewpoint }}>
+              {PLACE_ICONS[attraction.type]}
+            </div>
+          )}
+          {/* Gradient overlay at bottom */}
+          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-bg-secondary to-transparent" />
+          {/* Close button */}
+          <button onClick={onClose}
+            className="absolute top-4 right-4 w-9 h-9 bg-black/50 rounded-full flex items-center justify-center text-white backdrop-blur-sm">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-5 pb-8 pt-2">
+          {/* Header */}
+          <div className="flex items-start justify-between mb-1">
+            <div className="flex-1 min-w-0 pr-3">
+              <h3 className="text-white font-bold text-xl leading-tight">{details?.name ?? attraction.name}</h3>
+              <span className="text-gray-500 text-xs capitalize mt-0.5 block">{attraction.type.replace('_', ' ')}</span>
+            </div>
+            <div className="flex-shrink-0 text-right">
+              <div className="flex items-center gap-1 justify-end">
+                <StarRow rating={displayRating} size={11} />
+                <span className="text-accent-amber font-bold text-sm ml-1">{displayRating.toFixed(1)}</span>
+              </div>
+              {totalRatings !== undefined && (
+                <p className="text-gray-500 text-[10px] mt-0.5">{totalRatings.toLocaleString()} reviews</p>
+              )}
+            </div>
+          </div>
+
+          {details?.address && (
+            <p className="text-gray-400 text-xs mb-4 flex items-center gap-1.5">
+              <MapPin size={11} className="text-accent flex-shrink-0" />
+              {details.address}
+            </p>
+          )}
+
+          {!details?.address && attraction.distanceKm !== undefined && (
+            <p className="text-accent text-xs font-semibold mb-4">{attraction.distanceKm} km away</p>
+          )}
+
+          {/* Description */}
+          <p className="text-gray-300 text-sm leading-relaxed mb-5">{attraction.description}</p>
+
+          {/* Action buttons */}
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <button
+              onClick={() => { onShowOnMap(attraction); onClose() }}
+              className="flex items-center justify-center gap-2 bg-accent text-white font-bold py-3 rounded-2xl text-sm active:scale-95 transition-all"
+            >
+              🗺️ Show on Map
+            </button>
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 bg-bg-card border border-white/10 text-white font-semibold py-3 rounded-2xl text-sm"
+            >
+              <ExternalLink size={14} /> Google Maps
+            </a>
+          </div>
+
+          {/* Reviews */}
+          {!isPlacesReady() ? (
+            <div className="bg-bg-card rounded-2xl p-4 border border-white/5 text-center">
+              <p className="text-gray-400 text-sm font-medium mb-1">Google Reviews</p>
+              <p className="text-gray-600 text-xs">Add <code className="text-accent">VITE_GOOGLE_PLACES_KEY</code> in Vercel environment variables to show real reviews and photos.</p>
+            </div>
+          ) : loading ? (
+            <div className="space-y-3">
+              {[1, 2].map(i => (
+                <div key={i} className="bg-bg-card rounded-2xl p-4 border border-white/5 animate-pulse">
+                  <div className="h-3 bg-white/10 rounded w-32 mb-2" />
+                  <div className="h-3 bg-white/5 rounded w-full mb-1" />
+                  <div className="h-3 bg-white/5 rounded w-3/4" />
+                </div>
+              ))}
+            </div>
+          ) : reviews.length > 0 ? (
+            <div>
+              <p className="text-white font-semibold text-sm mb-3">Google Reviews</p>
+              <div className="space-y-3">
+                {reviews.map((r, i) => (
+                  <div key={i} className="bg-bg-card rounded-2xl p-4 border border-white/5">
+                    <div className="flex items-center gap-2.5 mb-2">
+                      {r.authorAvatar ? (
+                        <img src={r.authorAvatar} className="w-8 h-8 rounded-full object-cover flex-shrink-0" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent text-sm font-bold flex-shrink-0">
+                          {r.author[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-xs font-semibold truncate">{r.author}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <StarRow rating={r.rating} size={9} />
+                          <span className="text-gray-500 text-[10px]">{r.relativeTime}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {r.text && <p className="text-gray-300 text-xs leading-relaxed line-clamp-4">{r.text}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-bg-card rounded-2xl p-4 border border-white/5 text-center">
+              <p className="text-gray-500 text-sm">No reviews found for this location</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
 
 // ─── Top Destination Card ─────────────────────────────────────────────────────
 
-function TopDestinationCard({ attraction }: { attraction: Attraction }) {
-  const icons: Record<string, string> = {
-    viewpoint: '🌄', temple: '🛕', food: '🍽️', fuel: '⛽',
-    beach: '🏖️', waterfall: '💧', market: '🏪', mechanic: '🔧',
-  }
+function TopDestinationCard({ attraction, onClick }: { attraction: Attraction; onClick: () => void }) {
   return (
-    <div className="flex-shrink-0 w-40 bg-bg-card rounded-2xl overflow-hidden border border-white/5">
-      <div className="h-20 bg-bg-surface flex items-center justify-center text-4xl"
-           style={{ background: 'linear-gradient(135deg, #ff6b3515 0%, #0a84ff15 100%)' }}>
-        {icons[attraction.type]}
+    <button
+      onClick={onClick}
+      className="flex-shrink-0 w-40 bg-bg-card rounded-2xl overflow-hidden border border-white/5 text-left active:scale-95 transition-all"
+    >
+      <div className="h-20 flex items-center justify-center text-4xl"
+           style={{ background: TYPE_GRADIENTS[attraction.type] ?? 'linear-gradient(135deg,#1a1a1a,#0d0d0d)' }}>
+        {PLACE_ICONS[attraction.type]}
       </div>
       <div className="p-2.5">
         <p className="text-white text-xs font-semibold leading-tight line-clamp-2">{attraction.name}</p>
@@ -471,8 +771,9 @@ function TopDestinationCard({ attraction }: { attraction: Attraction }) {
           )}
         </div>
         <p className="text-gray-500 text-[10px] mt-0.5 capitalize">{attraction.type.replace('_', ' ')}</p>
+        <p className="text-accent text-[10px] font-semibold mt-1">Tap for details →</p>
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -827,6 +1128,7 @@ export default function ExplorePanel() {
   const [tab, setTab]                   = useState<ExploreTab>('discover')
   const [selectedEvent, setSelectedEvent] = useState<MotoEvent | null>(null)
   const [selectedAttraction, setSelectedAttraction] = useState<Attraction | null>(null)
+  const [selectedMod, setSelectedMod]   = useState<CommunityMod | null>(null)
   const [igFilter, setIgFilter]         = useState<string | null>(null)
   const tripTemplates       = useStore(s => s.tripTemplates)
   const savedTripIds        = useStore(s => s.savedTripIds)
@@ -894,7 +1196,7 @@ export default function ExplorePanel() {
                 onSeeAll={() => setTab('routes')}
               />
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
-                {topAttractions.map(a => <TopDestinationCard key={a.id} attraction={a} />)}
+                {topAttractions.map(a => <TopDestinationCard key={a.id} attraction={a} onClick={() => setSelectedAttraction(a)} />)}
               </div>
             </div>
 
@@ -905,7 +1207,7 @@ export default function ExplorePanel() {
                 sub="Most popular mods in the community"
               />
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
-                {MOCK_COMMUNITY_MODS.map(m => <CommunityModCard key={m.id} mod={m} />)}
+                {MOCK_COMMUNITY_MODS.map(m => <CommunityModCard key={m.id} mod={m} onClick={() => setSelectedMod(m)} />)}
               </div>
             </div>
 
@@ -1073,12 +1375,20 @@ export default function ExplorePanel() {
         <EventDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       )}
 
-      {/* Attraction detail modal */}
+      {/* Attraction detail modal (legacy, still used by AttractionCard in routes tab) */}
       {selectedAttraction && (
-        <AttractionDetailModal
+        <PlaceDetailSheet
           attraction={selectedAttraction}
           onClose={() => setSelectedAttraction(null)}
           onShowOnMap={handleShowOnMap}
+        />
+      )}
+
+      {/* Mod detail sheet */}
+      {selectedMod && (
+        <ModDetailSheet
+          mod={selectedMod}
+          onClose={() => setSelectedMod(null)}
         />
       )}
     </div>
