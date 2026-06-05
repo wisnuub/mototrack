@@ -134,44 +134,67 @@ function fmtDist(metres: number): string {
   return `${Math.round(metres / 10) * 10} m`
 }
 
-function RecenterMap({ center, gpsGranted, forceTick }: { center: [number, number]; gpsGranted: boolean; forceTick: number }) {
+// Shared following ref passed down from RideMap — avoids fighting between
+// GPS updates, fitBounds, and button presses.
+type FollowingRef = React.MutableRefObject<boolean>
+
+function RecenterMap({ center, gpsGranted, forceTick, followingRef }: {
+  center: [number, number]
+  gpsGranted: boolean
+  forceTick: number
+  followingRef: FollowingRef
+}) {
   const map = useMap()
   const firstGrant = useRef(false)
-  const following = useRef(true)  // true = auto-follow GPS; false = user panned away
+  // True while a programmatic setView/fitBounds animation is in flight,
+  // so zoomstart/movestart from that animation doesn't disable following.
+  const programmatic = useRef(false)
 
-  // Stop following when the user drags the map
   useEffect(() => {
-    const onDrag = () => { following.current = false }
-    map.on('dragstart', onDrag)
-    return () => { map.off('dragstart', onDrag) }
-  }, [map])
+    const onInteract = () => {
+      if (!programmatic.current) followingRef.current = false
+    }
+    map.on('dragstart', onInteract)
+    map.on('zoomstart', onInteract)
+    return () => { map.off('dragstart', onInteract); map.off('zoomstart', onInteract) }
+  }, [map]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Only re-center on GPS updates while in following mode
+  // GPS update: instant pan (no animation) so rapid updates don't stack animations
   useEffect(() => {
     if (gpsGranted && !firstGrant.current) {
       firstGrant.current = true
-      following.current = true
-      map.setView(center, 13, { animate: true })
-    } else if (firstGrant.current && following.current) {
-      map.setView(center, map.getZoom(), { animate: true })
+      // Initial grant: animate once to show the user where they are, don't auto-follow
+      programmatic.current = true
+      map.setView(center, 14, { animate: true })
+      map.once('moveend', () => { programmatic.current = false })
+    } else if (firstGrant.current && followingRef.current) {
+      // During a ride or after button press: instant pan, no animation jitter
+      map.panTo(center, { animate: false })
     }
-  }, [center, gpsGranted, map])
+  }, [center, gpsGranted, map]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Button press: re-enable following and snap to position
+  // Target button: snap to user, enable following
   useEffect(() => {
-    if (forceTick > 0) {
-      following.current = true
-      map.setView(center, Math.max(map.getZoom(), 14), { animate: true })
-    }
+    if (forceTick <= 0) return
+    followingRef.current = true
+    programmatic.current = true
+    map.setView(center, Math.max(map.getZoom(), 14), { animate: true })
+    map.once('moveend', () => { programmatic.current = false })
   }, [forceTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return null
 }
 
-function FitBounds({ positions, tick }: { positions: [number, number][]; tick: number }) {
+function FitBounds({ positions, tick, followingRef }: {
+  positions: [number, number][]
+  tick: number
+  followingRef: FollowingRef
+}) {
   const map = useMap()
   useEffect(() => {
     if (tick > 0 && positions.length > 1) {
+      // Disable GPS following so it doesn't immediately steal the view back
+      followingRef.current = false
       map.fitBounds(positions, { padding: [60, 60], animate: true, maxZoom: 14 })
     }
   }, [tick]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -683,6 +706,7 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
   const [pendingEnd, setPendingEnd] = useState(false)
   const [traveledSplitIdx, setTraveledSplitIdx] = useState(1)
   const [forceCenterTick, setForceCenterTick] = useState(0)
+  const mapFollowingRef = useRef(false)  // shared between RecenterMap + FitBounds
   const [stops, setStops] = useState<RideStop[]>(DEMO_STOPS)
   const [arrivalNotif, setArrivalNotif] = useState<string | null>(null)
   const prevRideModeRef = useRef<RideMode>('idle')
@@ -901,6 +925,9 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
       setCurrentStepIdx(0)
       setNavLoading(false)
       setNavError(null)
+      mapFollowingRef.current = false
+    } else if (rideMode === 'solo' || rideMode === 'group') {
+      mapFollowingRef.current = true  // follow GPS during an active ride
     }
     prevRideModeRef.current = rideMode
   }, [rideMode]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1095,22 +1122,26 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           {/* Route preview polyline (from Explore "Show on Map") */}
           {previewPolyline.length > 1 && (
             <>
-              <Polyline positions={previewPolyline} pathOptions={{ color: '#1f2937', weight: 7, opacity: 0.9 }} />
-              <Polyline positions={previewPolyline} pathOptions={{ color: '#3b82f6', weight: 4, opacity: 1 }} />
+              <Polyline positions={previewPolyline} pathOptions={{ color: '#7c2d12', weight: 7, opacity: 0.85 }} />
+              <Polyline positions={previewPolyline} pathOptions={{ color: '#ff6b35', weight: 4, opacity: 1 }} />
             </>
           )}
 
           {/* Route preview stop pins */}
           {previewStops.map((stop, i) => {
             const isStart = i === 0
-            const color = isStart ? '#30d158' : stop.isEnd ? '#ff453a' : '#ffd60a'
+            // Start = green dot, intermediate = orange numbered, end = red pin
+            const color = isStart ? '#30d158' : stop.isEnd ? '#ff3b30' : '#ff6b35'
+            const label = isStart ? '●' : stop.isEnd ? '🏁' : String(i)
+            const size = stop.isEnd ? 34 : 28
+            const anchor = stop.isEnd ? 17 : 14
             const icon = L.divIcon({
-              html: `<svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">
-                <path d="M14 0C6.3 0 0 6.3 0 14c0 9.8 14 22 14 22S28 23.8 28 14C28 6.3 21.7 0 14 0z" fill="${color}"/>
-                <circle cx="14" cy="14" r="8" fill="white" opacity="0.95"/>
-                <text x="14" y="18" text-anchor="middle" font-size="9" font-weight="bold" fill="${color}">${isStart ? 'A' : stop.isEnd ? 'B' : String(i)}</text>
+              html: `<svg width="${size}" height="${Math.round(size * 36/28)}" viewBox="0 0 ${size} ${Math.round(size * 36/28)}" xmlns="http://www.w3.org/2000/svg">
+                <path d="M${size/2} 0C${size*0.225} 0 0 ${size*0.225} 0 ${size/2}c0 ${size*0.35} ${size/2} ${size*0.786} ${size/2} ${size*0.786}S${size} ${size*0.85} ${size} ${size/2}C${size} ${size*0.225} ${size*0.775} 0 ${size/2} 0z" fill="${color}"/>
+                <circle cx="${size/2}" cy="${size/2}" r="${size*0.29}" fill="white" opacity="0.92"/>
+                <text x="${size/2}" y="${size/2 + size*0.115}" text-anchor="middle" font-size="${size*0.32}" font-weight="bold" fill="${color}">${label}</text>
               </svg>`,
-              className: '', iconSize: [28, 36], iconAnchor: [14, 36], popupAnchor: [0, -36],
+              className: '', iconSize: [size, Math.round(size * 36/28)], iconAnchor: [anchor, Math.round(size * 36/28)], popupAnchor: [0, -Math.round(size * 36/28)],
             })
             return (
               <Marker key={`prev-${i}`} position={stop.coords} icon={icon}>
@@ -1119,8 +1150,8 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
             )
           })}
 
-          <FitBounds positions={previewPolyline.length > 1 ? previewPolyline : previewStops.map(s => s.coords)} tick={fitBoundsTick} />
-          <RecenterMap center={mapTarget ? mapTarget.coords : center} gpsGranted={gpsState === 'granted'} forceTick={forceCenterTick} />
+          <FitBounds positions={previewPolyline.length > 1 ? previewPolyline : previewStops.map(s => s.coords)} tick={fitBoundsTick} followingRef={mapFollowingRef} />
+          <RecenterMap center={mapTarget ? mapTarget.coords : center} gpsGranted={gpsState === 'granted'} forceTick={forceCenterTick} followingRef={mapFollowingRef} />
         </MapContainer>
 
         {/* Navigation banner — routed rides */}

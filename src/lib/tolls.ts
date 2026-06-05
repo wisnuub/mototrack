@@ -15,12 +15,14 @@ export const TOLL_SEGMENTS: TollSegment[] = [
   {
     name: 'Bali Mandara Toll Road',
     motorcycleRateIDR: 5500,
-    // Nusa Dua ↔ Ngurah Rai Airport ↔ Benoa — over the sea causeway
-    bounds: { minLat: -8.790, maxLat: -8.740, minLng: 115.155, maxLng: 115.240 },
+    // Tight bounding box around the SEA CAUSEWAY only — the portion of the toll
+    // road that runs over water (no alternative roads exist here). This avoids
+    // false positives from routes near the airport on regular streets.
+    // Causeway: Nusa Dua gate → over Teluk Benoa bay → Ngurah Rai Airport area.
+    bounds: { minLat: -8.790, maxLat: -8.758, minLng: 115.160, maxLng: 115.188 },
     gates: [
       { lat: -8.7867, lng: 115.1723, name: 'Nusa Dua Gate' },
-      { lat: -8.7528, lng: 115.1670, name: 'Ngurah Rai North Gate' },
-      { lat: -8.7480, lng: 115.2120, name: 'Benoa Gate' },
+      { lat: -8.7600, lng: 115.1720, name: 'Ngurah Rai Gate' },
     ],
   },
 ]
