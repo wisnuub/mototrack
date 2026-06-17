@@ -141,22 +141,6 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
                 </button>
               )
             })}
-            <button
-              disabled
-              className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-white/5 bg-white/5 opacity-50"
-            >
-              <span className="text-3xl">📸</span>
-              <span className="text-white font-semibold text-sm">Story</span>
-              <span className="text-gray-500 text-[10px]">Coming Soon</span>
-            </button>
-            <button
-              disabled
-              className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-white/5 bg-white/5 opacity-50"
-            >
-              <span className="text-3xl">🎵</span>
-              <span className="text-white font-semibold text-sm">Bike Audio</span>
-              <span className="text-gray-500 text-[10px]">Coming Soon</span>
-            </button>
           </div>
         </div>
       </div>
