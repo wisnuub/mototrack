@@ -1,3 +1,10 @@
+// Google Routes API v2 (TWO_WHEELER mode) + Google Geocoding API.
+// Far better road accuracy in Indonesia than OSRM + Nominatim.
+// Uses the same key as Places — enable "Routes API" and "Geocoding API"
+// in Google Cloud Console on the same key as VITE_GOOGLE_PLACES_KEY.
+
+const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || import.meta.env.VITE_GOOGLE_PLACES_KEY || ''
+
 export interface NavStep {
   instruction: string
   maneuverType: string
@@ -14,115 +21,150 @@ export interface RouteResult {
   totalDuration: number   // seconds
 }
 
+export function isRoutingReady(): boolean {
+  return !!API_KEY
+}
+
+// Google Geocoding API — much better for Indonesian place names than Nominatim
 async function geocode(
   name: string,
   nearLat: number,
   nearLng: number,
 ): Promise<[number, number] | null> {
   try {
-    const params = new URLSearchParams({ q: name, format: 'json', limit: '5', addressdetails: '0' })
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
-      headers: {
-        'User-Agent': 'MotoTrack/1.0 (https://mototrack-mu.vercel.app)',
-        'Accept-Language': 'en',
-      },
+    const params = new URLSearchParams({
+      address: name,
+      region: 'id',
+      language: 'id',
+      key: API_KEY,
     })
+    const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`)
     if (!res.ok) return null
     const data = await res.json()
-    if (!Array.isArray(data) || data.length === 0) return null
-    // Pick the result closest to the rider's current position
-    const sorted = [...data].sort((a: any, b: any) => {
-      const dA = Math.abs(parseFloat(a.lat) - nearLat) + Math.abs(parseFloat(a.lon) - nearLng)
-      const dB = Math.abs(parseFloat(b.lat) - nearLat) + Math.abs(parseFloat(b.lon) - nearLng)
-      return dA - dB
-    })
-    return [parseFloat(sorted[0].lat), parseFloat(sorted[0].lon)]
+    if (data.status !== 'OK' || !data.results?.length) return null
+    // Pick result closest to rider position when multiple results returned
+    let best = data.results[0]
+    let bestDist = Infinity
+    for (const r of data.results) {
+      const { lat, lng } = r.geometry.location
+      const d = Math.hypot(lat - nearLat, lng - nearLng)
+      if (d < bestDist) { bestDist = d; best = r }
+    }
+    return [best.geometry.location.lat, best.geometry.location.lng]
   } catch {
     return null
   }
 }
 
-function buildInstruction(step: any): string {
-  const type: string = step.maneuver.type
-  const modifier: string = step.maneuver.modifier ?? ''
-  const name: string = step.name?.trim() || ''
-  const onto = name ? ` onto ${name}` : ''
-
-  if (type === 'depart') return name ? `Head ${modifier || 'forward'} on ${name}` : 'Depart'
-  if (type === 'arrive') return 'Arrive at your destination'
-  if (type === 'turn') {
-    if (modifier === 'uturn') return 'Make a U-turn'
-    if (modifier === 'sharp left') return `Sharp left${onto}`
-    if (modifier === 'left') return `Turn left${onto}`
-    if (modifier === 'slight left') return `Keep left${onto}`
-    if (modifier === 'slight right') return `Keep right${onto}`
-    if (modifier === 'right') return `Turn right${onto}`
-    if (modifier === 'sharp right') return `Sharp right${onto}`
-    return `Turn${onto}`
+// Google's encoded polyline algorithm decoder
+function decodePolyline(encoded: string): [number, number][] {
+  const points: [number, number][] = []
+  let index = 0, lat = 0, lng = 0
+  while (index < encoded.length) {
+    let b: number, shift = 0, result = 0
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5 } while (b >= 0x20)
+    lat += (result & 1) ? ~(result >> 1) : result >> 1
+    shift = 0; result = 0
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5 } while (b >= 0x20)
+    lng += (result & 1) ? ~(result >> 1) : result >> 1
+    points.push([lat / 1e5, lng / 1e5])
   }
-  if (type === 'continue') return name ? `Continue on ${name}` : 'Continue straight'
-  if (type === 'merge') return name ? `Merge onto ${name}` : 'Merge'
-  if (type === 'ramp') {
-    if (modifier === 'left') return `Take the ramp on the left${onto}`
-    if (modifier === 'right') return `Take the ramp on the right${onto}`
-    return `Take the ramp${onto}`
-  }
-  if (type === 'fork') {
-    if (modifier.includes('left')) return `Keep left${onto}`
-    if (modifier.includes('right')) return `Keep right${onto}`
-    return `Keep straight${onto}`
-  }
-  if (type === 'end of road') {
-    if (modifier === 'left') return `Turn left${onto}`
-    if (modifier === 'right') return `Turn right${onto}`
-    return `Continue${onto}`
-  }
-  if (type === 'roundabout' || type === 'rotary') {
-    const exit = step.maneuver.exit
-    return exit ? `Take exit ${exit} at the roundabout${onto}` : `Enter roundabout${onto}`
-  }
-  if (type === 'exit roundabout' || type === 'exit rotary') return `Exit roundabout${onto}`
-  return name ? `Continue on ${name}` : 'Continue'
+  return points
 }
 
-async function fetchRoute(waypoints: [number, number][]): Promise<RouteResult | null> {
-  // OSRM expects lon,lat order
-  const coords = waypoints.map(([lat, lng]) => `${lng},${lat}`).join(';')
-  const url = `https://router.project-osrm.org/route/v1/driving/${coords}?steps=true&geometries=geojson&overview=full`
+// Map Google maneuver enums → OSRM-style type/modifier so RideMap.tsx icons don't change
+function mapManeuver(gm: string): { type: string; modifier: string } {
+  const map: Record<string, { type: string; modifier: string }> = {
+    DEPART:            { type: 'depart',     modifier: '' },
+    ARRIVE:            { type: 'arrive',     modifier: '' },
+    TURN_LEFT:         { type: 'turn',       modifier: 'left' },
+    TURN_RIGHT:        { type: 'turn',       modifier: 'right' },
+    TURN_SLIGHT_LEFT:  { type: 'turn',       modifier: 'slight left' },
+    TURN_SLIGHT_RIGHT: { type: 'turn',       modifier: 'slight right' },
+    TURN_SHARP_LEFT:   { type: 'turn',       modifier: 'sharp left' },
+    TURN_SHARP_RIGHT:  { type: 'turn',       modifier: 'sharp right' },
+    ROUNDABOUT_LEFT:   { type: 'roundabout', modifier: 'left' },
+    ROUNDABOUT_RIGHT:  { type: 'roundabout', modifier: 'right' },
+    U_TURN_LEFT:       { type: 'continue',   modifier: 'uturn' },
+    U_TURN_RIGHT:      { type: 'continue',   modifier: 'uturn' },
+    STRAIGHT:          { type: 'continue',   modifier: 'straight' },
+    RAMP_LEFT:         { type: 'ramp',       modifier: 'left' },
+    RAMP_RIGHT:        { type: 'ramp',       modifier: 'right' },
+    MERGE:             { type: 'merge',      modifier: 'straight' },
+    FERRY:             { type: 'ferry',      modifier: '' },
+  }
+  return map[gm] ?? { type: 'continue', modifier: 'straight' }
+}
+
+// Google Routes API v2 — supports TWO_WHEELER (motorcycle) travel mode
+export async function fetchRoute(waypoints: [number, number][]): Promise<RouteResult | null> {
+  if (waypoints.length < 2 || !API_KEY) return null
+
+  const [oLat, oLng] = waypoints[0]
+  const [dLat, dLng] = waypoints[waypoints.length - 1]
+  const intermediates = waypoints.slice(1, -1).map(([lat, lng]) => ({
+    location: { latLng: { latitude: lat, longitude: lng } },
+  }))
+
+  const body: Record<string, unknown> = {
+    origin:      { location: { latLng: { latitude: oLat, longitude: oLng } } },
+    destination: { location: { latLng: { latitude: dLat, longitude: dLng } } },
+    travelMode:  'TWO_WHEELER',
+    routingPreference: 'TRAFFIC_AWARE',
+    languageCode: 'id',
+    units: 'METRIC',
+    computeAlternativeRoutes: false,
+  }
+  if (intermediates.length) body.intermediates = intermediates
+
   try {
-    const res = await fetch(url)
+    const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': API_KEY,
+        'X-Goog-FieldMask': [
+          'routes.distanceMeters',
+          'routes.duration',
+          'routes.polyline.encodedPolyline',
+          'routes.legs.steps.navigationInstruction',
+          'routes.legs.steps.distanceMeters',
+          'routes.legs.steps.staticDuration',
+          'routes.legs.steps.startLocation',
+        ].join(','),
+      },
+      body: JSON.stringify(body),
+    })
+
     if (!res.ok) return null
     const data = await res.json()
-    if (data.code !== 'Ok' || !data.routes?.length) return null
+    const route = data.routes?.[0]
+    if (!route) return null
 
-    const route = data.routes[0]
-
-    // OSRM geometry uses [lon, lat] — convert to [lat, lng]
-    const routeGeometry: [number, number][] = route.geometry.coordinates.map(
-      ([lon, lat]: [number, number]) => [lat, lon],
-    )
+    const routeGeometry = decodePolyline(route.polyline.encodedPolyline)
+    const totalDistance = route.distanceMeters as number
+    // duration comes back as "1234s"
+    const totalDuration = parseInt(String(route.duration))
 
     const steps: NavStep[] = []
-    for (const leg of route.legs) {
-      for (const step of leg.steps) {
+    for (const leg of route.legs ?? []) {
+      for (const step of leg.steps ?? []) {
+        const nav = step.navigationInstruction as { maneuver: string; instructions: string } | undefined
+        const { type, modifier } = mapManeuver(nav?.maneuver ?? '')
         steps.push({
-          instruction: buildInstruction(step),
-          maneuverType: step.maneuver.type,
-          maneuverModifier: step.maneuver.modifier ?? '',
-          distance: Math.round(step.distance),
-          duration: Math.round(step.duration),
-          // OSRM maneuver location is [lon, lat] — convert
-          location: [step.maneuver.location[1], step.maneuver.location[0]],
+          instruction: nav?.instructions ?? 'Continue',
+          maneuverType: type,
+          maneuverModifier: modifier,
+          distance: step.distanceMeters ?? 0,
+          duration: step.staticDuration ? parseInt(String(step.staticDuration)) : 0,
+          location: step.startLocation?.latLng
+            ? [step.startLocation.latLng.latitude, step.startLocation.latLng.longitude]
+            : routeGeometry[0],
         })
       }
     }
 
-    return {
-      routeGeometry,
-      steps,
-      totalDistance: Math.round(route.distance),
-      totalDuration: Math.round(route.duration),
-    }
+    return { routeGeometry, steps, totalDistance, totalDuration }
   } catch {
     return null
   }
@@ -137,8 +179,7 @@ export async function planRoute(
   for (const name of destinationNames) {
     const coords = await geocode(name, startLat, startLng)
     if (coords) stops.push(coords)
-    // Nominatim requires ≤1 req/sec
-    await new Promise(r => setTimeout(r, 300))
+    // No rate-limit delay needed with Google API key (unlike Nominatim)
   }
   if (stops.length === 0) return null
 
