@@ -394,33 +394,60 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop)
   }, [showProfile, showLauncher])
 
-  // Handle Supabase OAuth redirect (Google sign-in)
+  // Handle Supabase auth state (OAuth redirect + session restore)
   useEffect(() => {
     if (!isSupabaseReady) return
-    supabase.auth.onAuthStateChange(async (event, session) => {
-      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') && session?.user) {
-        const sbUser = session.user
+
+    const applySession = async (sbUser: { id: string; email?: string; user_metadata?: any; app_metadata?: any }) => {
+      try {
         const [profile, adminProfile] = await Promise.all([
-          dbGetProfile(sbUser.id),
+          dbGetProfile(sbUser.id).catch(() => null),
           dbGetAdminProfile(sbUser.id).catch(() => ({ isAdmin: false, badges: [] })),
         ])
         useStore.setState({
           user: {
             id: sbUser.id,
-            name: profile?.name ?? sbUser.user_metadata?.full_name ?? sbUser.email!.split('@')[0],
-            email: sbUser.email!,
+            name: profile?.name ?? sbUser.user_metadata?.full_name ?? sbUser.email?.split('@')[0] ?? 'Rider',
+            email: sbUser.email ?? '',
             avatar: profile?.avatar ?? '🤙',
             username: profile?.username ?? undefined,
             provider: sbUser.app_metadata?.provider === 'google' ? 'google' : 'email',
             badges: (profile?.badges ?? adminProfile.badges) as BadgeType[],
             ...(adminProfile.isAdmin ? { isAdmin: true } : {}),
           },
-          // If they have a saved profile name, they completed onboarding — restore on any device
           ...(profile?.name ? { setupCompletedForUserId: sbUser.id } : {}),
         })
-        await loadUserData(sbUser.id)
+        loadUserData(sbUser.id).catch(() => {})
+      } catch {
+        // profile fetch failed — still sign the user in with basic info
+        useStore.setState({
+          user: {
+            id: sbUser.id,
+            name: sbUser.user_metadata?.full_name ?? sbUser.email?.split('@')[0] ?? 'Rider',
+            email: sbUser.email ?? '',
+            avatar: '🤙',
+            provider: sbUser.app_metadata?.provider === 'google' ? 'google' : 'email',
+            badges: [],
+          },
+        })
+      }
+    }
+
+    // Restore existing session on page load (handles OAuth redirect + returning users)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) applySession(session.user)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+        applySession(session.user)
+      }
+      if (event === 'SIGNED_OUT') {
+        useStore.setState({ user: null })
       }
     })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   // Start broadcasting location when logged in
