@@ -42,6 +42,11 @@ export default defineConfig({
             options: { cacheName: 'carto-tiles', expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 60 * 60 } }
           },
           {
+            urlPattern: /^https:\/\/api\.mapbox\.com\/styles\/.*/i,
+            handler: 'CacheFirst',
+            options: { cacheName: 'mapbox-tiles', expiration: { maxEntries: 1000, maxAgeSeconds: 7 * 24 * 60 * 60 } }
+          },
+          {
             urlPattern: /^https:\/\/api\.open-meteo\.com\/.*/i,
             handler: 'NetworkFirst',
             options: { cacheName: 'weather-api', expiration: { maxEntries: 10, maxAgeSeconds: 30 * 60 } }

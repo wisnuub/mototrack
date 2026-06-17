@@ -990,11 +990,20 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           zoomControl={false}
           attributionControl={false}
         >
-          <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-            maxZoom={19}
-          />
+          {import.meta.env.VITE_MAPBOX_TOKEN ? (
+            <TileLayer
+              url={`https://api.mapbox.com/styles/v1/mapbox/navigation-night-v1/tiles/256/{z}/{x}/{y}@2x?access_token=${import.meta.env.VITE_MAPBOX_TOKEN}`}
+              attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+              tileSize={256}
+              maxZoom={22}
+            />
+          ) : (
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+              maxZoom={19}
+            />
+          )}
 
           {/* Route polylines — Google Maps style: orange past, grey future (group only) */}
           {rideMode !== 'idle' && routePositions.length > 1 && (() => {
