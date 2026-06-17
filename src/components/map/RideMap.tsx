@@ -767,8 +767,7 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           setPreviewName(name)
           setPreviewLoading(true)
           // Fetch real road-following route from OSRM
-          import('../../lib/routing').then(({ planRoute }) => {
-            planRoute(waypoints[0].lat, waypoints[0].lng, waypoints.slice(1).map(w => w.name))
+          planRoute(waypoints[0].lat, waypoints[0].lng, waypoints.slice(1).map(w => w.name))
               .then(res => {
                 if (res) {
                   setPreviewPolyline(res.route.routeGeometry)
@@ -801,7 +800,6 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
                 setFitBoundsTick(t => t + 1)
               })
               .finally(() => setPreviewLoading(false))
-          })
         }
       } catch {}
     }
@@ -1005,7 +1003,7 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
             />
           )}
 
-          {/* Route polylines — Google Maps style: orange past, grey future (group only) */}
+          {/* Route polylines — Google Maps style: blue route */}
           {rideMode !== 'idle' && routePositions.length > 1 && (() => {
             const ROUTE_DURATION_S = 1800
             const progress = Math.min(elapsed / ROUTE_DURATION_S, 1)
@@ -1015,15 +1013,15 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
             const futureRoute = routePositions.slice(splitIdx)
             return (
               <>
-                {/* Future route — only in group/routed mode */}
-                {rideMode === 'group' && futureRoute.length > 1 && <>
-                  <Polyline positions={futureRoute} pathOptions={{ color: '#1f2937', weight: 8, opacity: 0.9 }} />
-                  <Polyline positions={futureRoute} pathOptions={{ color: '#6b7280', weight: 5, opacity: 0.7, dashArray: '12 6' }} />
+                {/* Future route — Google blue */}
+                {futureRoute.length > 1 && <>
+                  <Polyline positions={futureRoute} pathOptions={{ color: '#1558d6', weight: 9, opacity: 0.95 }} />
+                  <Polyline positions={futureRoute} pathOptions={{ color: '#4285F4', weight: 6, opacity: 1 }} />
                 </>}
-                {/* Traveled route — orange, solid */}
+                {/* Traveled route — slightly muted blue */}
                 {pastRoute.length > 1 && <>
-                  <Polyline positions={pastRoute} pathOptions={{ color: '#c2410c', weight: 8, opacity: 0.8 }} />
-                  <Polyline positions={pastRoute} pathOptions={{ color: '#ff6b35', weight: 5, opacity: 1 }} />
+                  <Polyline positions={pastRoute} pathOptions={{ color: '#0f3e8a', weight: 9, opacity: 0.85 }} />
+                  <Polyline positions={pastRoute} pathOptions={{ color: '#93C5FD', weight: 6, opacity: 0.9 }} />
                 </>}
               </>
             )
@@ -1163,98 +1161,64 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           <RecenterMap center={mapTarget ? mapTarget.coords : center} gpsGranted={gpsState === 'granted'} forceTick={forceCenterTick} followingRef={mapFollowingRef} />
         </MapContainer>
 
-        {/* Navigation banner — routed rides */}
+        {/* Navigation banner — Google Maps style, full-width flush to top */}
         {rideMode !== 'idle' && rideStyle === 'routed' && (() => {
-          const otherRiders = riders.filter(r => r.id !== myRiderId && r.status !== 'offline')
-          const isPhoto = (v: string) => v.startsWith('http') || v.startsWith('data:')
-          const Avatar = ({ src, size = 'md' }: { src: string; size?: 'sm' | 'md' }) => {
-            const cls = size === 'sm'
-              ? 'w-6 h-6 rounded-full border border-white/20 bg-bg-card flex items-center justify-center overflow-hidden flex-shrink-0'
-              : 'w-12 h-12 rounded-xl border-2 border-blue-400/50 bg-bg-card flex items-center justify-center overflow-hidden flex-shrink-0'
-            return (
-              <div className={cls}>
-                {isPhoto(src)
-                  ? <img src={src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  : <span className={size === 'sm' ? 'text-xs' : 'text-2xl'}>{src}</span>}
-              </div>
-            )
-          }
+          const step = navSteps[currentStepIdx]
+          const streetName = step
+            ? step.instruction.replace(/^(Turn\s+\w+\s+onto\s+|Continue\s+onto\s+|Head\s+\w+\s+on\s+|Merge\s+onto\s+|Keep\s+\w+\s+to\s+stay\s+on\s+)/i, '') || step.instruction
+            : null
           return (
-            <div className="absolute top-3 left-3 right-3 z-10">
+            <div className="absolute top-0 left-0 right-0 z-10">
               {navLoading ? (
-                <div className="bg-[#0d2137]/95 backdrop-blur-md rounded-2xl px-4 py-3 border border-blue-500/30 flex items-center gap-3 shadow-lg">
-                  <span className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin flex-shrink-0" />
+                <div className="bg-[#1a4a3a] px-5 py-4 flex items-center gap-3 shadow-xl">
+                  <span className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
                   <div>
-                    <p className="text-white text-sm font-semibold">Calculating route…</p>
-                    <p className="text-blue-300 text-xs mt-0.5">Looking up destinations</p>
+                    <p className="text-white font-bold text-base">Calculating route…</p>
+                    <p className="text-[#86efac] text-xs mt-0.5">Looking up destinations</p>
                   </div>
                 </div>
               ) : navError ? (
-                <div className="bg-[#2d0a0a]/95 backdrop-blur-md rounded-2xl px-4 py-3 border border-moto-red/30 flex items-center gap-3 shadow-lg">
-                  <span className="text-xl flex-shrink-0">⚠️</span>
-                  <p className="text-white text-sm font-medium">{navError}</p>
+                <div className="bg-[#7c0000] px-5 py-4 flex items-center gap-3 shadow-xl">
+                  <span className="text-2xl flex-shrink-0">⚠️</span>
+                  <p className="text-white font-semibold text-sm">{navError}</p>
                 </div>
-              ) : navSteps.length > 0 && currentStepIdx < navSteps.length ? (
-                <div className="bg-[#0d2137]/95 backdrop-blur-md rounded-2xl border border-blue-500/30 shadow-xl overflow-hidden">
-                  {/* Main instruction row */}
-                  <div className="flex items-center gap-3 px-4 py-3">
-                    {/* Rider avatar + direction badge */}
-                    <div className="relative flex-shrink-0">
-                      <Avatar src={myAvatar} size="md" />
-                      <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center border-2 border-[#0d2137] text-white text-[11px] font-bold select-none leading-none">
-                        {maneuverArrow(navSteps[currentStepIdx].maneuverType, navSteps[currentStepIdx].maneuverModifier)}
-                      </div>
+              ) : step ? (
+                <div className="bg-[#1a4a3a] shadow-2xl">
+                  <div className="flex items-center gap-3 px-4 py-3 min-h-[76px]">
+                    {/* Large direction arrow — Google Maps style */}
+                    <div className="flex-shrink-0 w-14 flex items-center justify-center">
+                      <span className="text-white font-black select-none" style={{ fontSize: 44, lineHeight: 1 }}>
+                        {maneuverArrow(step.maneuverType, step.maneuverModifier)}
+                      </span>
                     </div>
 
+                    {/* Street name */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-white font-bold text-sm leading-tight line-clamp-2">
-                        {navSteps[currentStepIdx].instruction}
-                      </p>
-                      {navSteps[currentStepIdx + 1] && (
-                        <p className="text-blue-300 text-xs mt-0.5 truncate">
-                          Then: {navSteps[currentStepIdx + 1].instruction}
-                        </p>
-                      )}
+                      <p className="text-[#86efac] text-xs font-semibold tracking-wide uppercase">towards</p>
+                      <p className="text-white font-black text-xl leading-tight line-clamp-1">{streetName}</p>
+                      <p className="text-[#86efac] text-sm font-semibold mt-0.5">{fmtDist(step.distance)}</p>
                     </div>
 
-                    <div className="flex-shrink-0 text-right">
-                      <p className="text-white font-black text-base leading-none">
-                        {fmtDist(navSteps[currentStepIdx].distance)}
-                      </p>
-                    </div>
+                    {/* Blue compass / re-centre button */}
+                    <button
+                      className="w-11 h-11 bg-[#1A73E8] rounded-full flex items-center justify-center flex-shrink-0 shadow-lg active:scale-90 transition-transform"
+                      onClick={() => { if (!isTracking) setTracking(true); setForceCenterTick(t => t + 1) }}
+                    >
+                      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                        <path d="M11 2L8 14l3-3 3 3L11 2z" fill="white"/>
+                        <path d="M11 20L8 8l3 3 3-3L11 20z" fill="white" opacity="0.4"/>
+                      </svg>
+                    </button>
                   </div>
 
-                  {/* Group members + ETA strip */}
-                  <div className="bg-black/25 px-4 py-2 flex items-center gap-2">
-                    {otherRiders.length > 0 && (
-                      <div className="flex items-center gap-1 mr-1.5">
-                        {otherRiders.slice(0, 4).map(r => (
-                          <div key={r.id} className="relative">
-                            <Avatar src={r.avatar} size="sm" />
-                            <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#0d2137] ${
-                              r.status === 'riding' ? 'bg-moto-green' : 'bg-accent-amber'
-                            }`} />
-                          </div>
-                        ))}
-                        {otherRiders.length > 4 && (
-                          <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
-                            <span className="text-white text-[9px] font-bold">+{otherRiders.length - 4}</span>
-                          </div>
-                        )}
-                        <span className="text-blue-300/60 text-[10px] ml-1">
-                          {otherRiders.length} riding
-                        </span>
-                      </div>
-                    )}
-                    <p className="text-blue-300 text-xs">
-                      {navSteps[currentStepIdx + 1] ? `${currentStepIdx + 1}/${navSteps.length - 1}` : '🏁 Arriving'}
-                    </p>
-                    {navDistanceRemaining !== null && (
-                      <p className="text-blue-300 text-xs ml-auto">
-                        {fmtDist(navDistanceRemaining)} · {Math.ceil(navTotalDuration * (navDistanceRemaining / Math.max(navTotalDistance, 1)) / 60)} min
-                      </p>
-                    )}
-                  </div>
+                  {/* Next turn strip */}
+                  {navSteps[currentStepIdx + 1] && (
+                    <div className="bg-black/20 px-5 py-1.5 flex items-center gap-2 border-t border-white/5">
+                      <span className="text-[#86efac] text-[11px] font-semibold">Then:</span>
+                      <span className="text-white text-[11px] flex-1 truncate">{navSteps[currentStepIdx + 1].instruction}</span>
+                      <span className="text-[#86efac] text-[11px] font-semibold flex-shrink-0">{fmtDist(navSteps[currentStepIdx + 1].distance)}</span>
+                    </div>
+                  )}
                 </div>
               ) : null}
             </div>
@@ -1340,8 +1304,8 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           </div>
         )}
 
-        {/* Stops progress strip */}
-        {rideMode !== 'idle' && (
+        {/* Stops progress strip — only in wind/non-routed mode */}
+        {rideMode !== 'idle' && rideStyle !== 'routed' && (
           <div className="absolute bottom-[4.5rem] left-3 right-16 z-10">
             <div className="bg-bg-primary/90 backdrop-blur-md rounded-2xl px-3 py-2 border border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               {stops.map((stop, i) => {
@@ -1400,16 +1364,16 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           </div>
         )}
 
-        {/* Ride control buttons — bottom-left */}
-        <div className="absolute bottom-4 left-4 z-10 flex items-center gap-2">
+        {/* Bottom-left controls — Re-centre pill (Google Maps style) + ride controls */}
+        <div className="absolute bottom-4 left-4 z-10 flex flex-col items-start gap-2">
           {rideMode === 'idle' && (
             <button onClick={onStartRide}
               className="bg-moto-green text-white font-bold px-5 py-3 rounded-2xl flex items-center gap-1.5 text-sm shadow-lg active:scale-95 transition-all">
               ▶ Start Ride
             </button>
           )}
-          {(rideMode === 'solo' || rideMode === 'group') && (
-            <>
+          {(rideMode === 'solo' || rideMode === 'group') && rideStyle !== 'routed' && (
+            <div className="flex items-center gap-2">
               <button onClick={() => { onPauseRide?.(); setShowShareCard(true) }}
                 className="bg-accent-amber text-black font-bold px-4 py-3 rounded-2xl flex items-center gap-1.5 text-sm shadow-lg active:scale-95 transition-all">
                 ⏸ Pause
@@ -1418,10 +1382,10 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
                 className="bg-moto-red text-white font-bold px-4 py-3 rounded-2xl flex items-center gap-1.5 text-sm shadow-lg active:scale-95 transition-all">
                 ■ Stop
               </button>
-            </>
+            </div>
           )}
           {rideMode === 'paused' && (
-            <>
+            <div className="flex items-center gap-2">
               <button onClick={onResumeRide}
                 className="bg-moto-green text-white font-bold px-4 py-3 rounded-2xl flex items-center gap-1.5 text-sm shadow-lg active:scale-95 transition-all">
                 ▶ Resume
@@ -1430,13 +1394,27 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
                 className="bg-moto-red text-white font-bold px-4 py-3 rounded-2xl flex items-center gap-1.5 text-sm shadow-lg active:scale-95 transition-all">
                 ■ End
               </button>
-            </>
+            </div>
+          )}
+          {/* Re-centre pill — Google Maps style, only when not following */}
+          {!isTracking && (
+            <button
+              className="bg-white/95 text-gray-800 font-semibold text-sm px-4 py-2.5 rounded-full flex items-center gap-2 shadow-lg active:scale-95 transition-all border border-gray-200/50"
+              onClick={() => { setTracking(true); setForceCenterTick(t => t + 1) }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 1L5.5 10l2.5-2.5L10.5 10 8 1z" fill="#1A73E8"/>
+              </svg>
+              Re-centre
+            </button>
           )}
         </div>
 
-        {/* GPS accuracy badge — top left */}
+        {/* GPS accuracy badge — below nav banner when routing, otherwise top-left */}
         {gpsState === 'granted' && gpsAccuracy !== null && (
-          <div className={`absolute top-3 left-3 z-10 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold border backdrop-blur-sm ${
+          <div className={`absolute z-10 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold border backdrop-blur-sm ${
+            rideMode !== 'idle' && rideStyle === 'routed' ? 'top-[5.5rem] left-3' : 'top-3 left-3'
+          } ${
             (gpsAccuracy <= 20 || hasGyro)
               ? 'bg-moto-green/20 border-moto-green/30 text-moto-green'
               : gpsAccuracy <= 100
@@ -1448,26 +1426,86 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
           </div>
         )}
 
-        {/* Center button — bottom right only */}
-        <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1.5">
+        {/* Right-side floating controls — Google Maps style */}
+        <div className="absolute right-4 z-10 flex flex-col items-center gap-2" style={{ bottom: rideMode !== 'idle' ? '5.5rem' : '5rem' }}>
+          {/* Compass — red north pointer */}
           <button
-            className="bg-accent text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg active:scale-90 transition-transform"
+            className="w-11 h-11 bg-white/95 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform border border-gray-200/50"
             onClick={() => { if (!isTracking) setTracking(true); setForceCenterTick(t => t + 1) }}
-            title="Center to my location"
+            title="North up"
           >
-            <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="5.5" />
-              <line x1="11" y1="1" x2="11" y2="5" />
-              <line x1="11" y1="17" x2="11" y2="21" />
-              <line x1="1" y1="11" x2="5" y2="11" />
-              <line x1="17" y1="11" x2="21" y2="11" />
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <path d="M11 3L8.5 13l2.5-2.5 2.5 2.5L11 3z" fill="#EA4335"/>
+              <path d="M11 19L8.5 9l2.5 2.5L13.5 9 11 19z" fill="#4285F4" opacity="0.5"/>
+            </svg>
+          </button>
+          {/* Search */}
+          <button
+            className="w-11 h-11 bg-white/95 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform border border-gray-200/50"
+            title="Search"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#5f6368" strokeWidth="2" strokeLinecap="round">
+              <circle cx="7.5" cy="7.5" r="5"/>
+              <line x1="11.5" y1="11.5" x2="16" y2="16"/>
+            </svg>
+          </button>
+          {/* Volume */}
+          <button
+            className="w-11 h-11 bg-white/95 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform border border-gray-200/50"
+            title="Sound"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#5f6368" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="2,6 6,6 10,2 10,16 6,12 2,12"/>
+              <path d="M12.5 5.5a5 5 0 0 1 0 7"/>
             </svg>
           </button>
         </div>
       </div>
 
-      {/* Live stats — active ride */}
-      {(rideMode === 'solo' || rideMode === 'group') && (
+      {/* Bottom bar — Google Maps ETA style during routed ride, live stats otherwise */}
+      {(rideMode === 'solo' || rideMode === 'group') && rideStyle === 'routed' && navSteps.length > 0 ? (
+        <div className="bg-[#1c1c1e] border-t border-white/5 px-4 py-3 flex items-center gap-3">
+          {/* × cancel / stop */}
+          <button
+            onClick={() => { setShowShareCard(true); setPendingEnd(true) }}
+            className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white text-lg font-bold flex-shrink-0 active:scale-90 transition-transform"
+          >✕</button>
+
+          {/* ETA info — center */}
+          <div className="flex-1 text-center">
+            <p className="text-[#FF9500] font-black text-2xl leading-none">
+              {navDistanceRemaining !== null
+                ? `${Math.max(1, Math.ceil(navTotalDuration * (navDistanceRemaining / Math.max(navTotalDistance, 1)) / 60))} min`
+                : `${Math.ceil(navTotalDuration / 60)} min`}
+            </p>
+            <p className="text-gray-400 text-sm mt-0.5">
+              {navDistanceRemaining !== null
+                ? `${(navDistanceRemaining / 1000).toFixed(1)} km`
+                : `${(navTotalDistance / 1000).toFixed(1)} km`}
+              {' · '}
+              {(() => {
+                const minsLeft = navDistanceRemaining !== null
+                  ? Math.max(1, Math.ceil(navTotalDuration * (navDistanceRemaining / Math.max(navTotalDistance, 1)) / 60))
+                  : Math.ceil(navTotalDuration / 60)
+                const arrival = new Date(Date.now() + minsLeft * 60000)
+                return arrival.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              })()}
+            </p>
+          </div>
+
+          {/* Pause button */}
+          <button
+            onClick={() => { onPauseRide?.(); setShowShareCard(true) }}
+            className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0 active:scale-90 transition-transform"
+            title="Pause ride"
+          >
+            <svg width="14" height="16" viewBox="0 0 14 16" fill="white">
+              <rect x="0" y="0" width="5" height="16" rx="1.5"/>
+              <rect x="9" y="0" width="5" height="16" rx="1.5"/>
+            </svg>
+          </button>
+        </div>
+      ) : (rideMode === 'solo' || rideMode === 'group') ? (
         <div className="bg-bg-secondary border-t border-white/5 px-4 py-3">
           <div className="flex justify-between items-center mb-2">
             <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Live Stats</span>
@@ -1488,7 +1526,7 @@ export default function RideMap({ rideMode = 'idle', rideStyle = 'wind', userDes
             />
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Ride share modal */}
       {showShareCard && (
